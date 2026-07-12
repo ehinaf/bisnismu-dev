@@ -7,6 +7,7 @@ import { AuthModule } from "./modules/auth/auth.module";
 import { TenantModule } from "./modules/tenant/tenant.module";
 import { SalesModule } from "./modules/sales/sales.module";
 import { CatalogModule } from "./modules/catalog/catalog.module";
+import { CashdrawerModule } from "./modules/cashdrawer/cashdrawer.module";
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { CatalogModule } from "./modules/catalog/catalog.module";
     TenantModule,
     SalesModule,
     CatalogModule,
+    CashdrawerModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })

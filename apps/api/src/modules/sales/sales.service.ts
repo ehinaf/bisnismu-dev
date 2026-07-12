@@ -23,6 +23,12 @@ export class SalesService {
         });
         if (!outlet) throw new NotFoundException("Outlet tidak ditemukan");
 
+        // Sesi laci terbuka di outlet ini ditautkan otomatis jika ada — TIDAK wajib,
+        // supaya modul cashdrawer tetap independen (belum buka laci ≠ tidak bisa jual).
+        const openCashDrawerSession = await tx.cashDrawerSession.findFirst({
+          where: { outlet_id: dto.outlet_id, status: "open" },
+        });
+
         const customer = dto.customer_id
           ? await tx.customer.findFirst({
               where: { id: dto.customer_id, business_id: businessId, deleted_at: null },
@@ -229,6 +235,7 @@ export class SalesService {
             cashier_id: cashierId,
             customer_id: customer?.id,
             dining_table_id: dto.dining_table_id,
+            cash_drawer_session_id: openCashDrawerSession?.id,
             transaction_number: transactionNumber,
             order_type: dto.order_type ?? "retail",
             status: "completed",

@@ -11,6 +11,7 @@ import { CreateTransactionDto } from "./dto/create-transaction.dto";
 function buildMockTx(overrides: Record<string, unknown> = {}) {
   const base = {
     outlet: { findFirst: jest.fn().mockResolvedValue({ id: "outlet-1", business_id: "biz-1" }) },
+    cashDrawerSession: { findFirst: jest.fn().mockResolvedValue(null) },
     customer: {
       findFirst: jest.fn().mockResolvedValue(null),
       update: jest.fn().mockResolvedValue({}),
