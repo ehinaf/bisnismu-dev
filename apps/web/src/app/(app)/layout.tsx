@@ -15,7 +15,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [ready, setReady] = useState(false);
   const [userName, setUserName] = useState<string | null>(null);
-  const [canViewReports, setCanViewReports] = useState(false);
+  const [canManage, setCanViewReports] = useState(false);
 
   useEffect(() => {
     if (!getToken()) {
@@ -42,7 +42,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             <NavLink href="/dashboard" active={pathname === "/dashboard"}>
               Kasir
             </NavLink>
-            {canViewReports && (
+            {canManage && (
+              <NavLink href="/catalog" active={pathname === "/catalog"}>
+                Produk
+              </NavLink>
+            )}
+            {canManage && (
               <NavLink href="/reports" active={pathname === "/reports"}>
                 Laporan
               </NavLink>

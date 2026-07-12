@@ -9,6 +9,41 @@ export interface CatalogItem {
   image_url: string | null;
 }
 
+export type ItemType = "product" | "service" | "bundle" | "ingredient";
+export type PricingType = "fixed" | "per_unit" | "per_duration" | "tiered" | "open";
+
+export interface ItemDetail {
+  id: string;
+  name: string;
+  category_id: string | null;
+  unit_id: string | null;
+  sku: string | null;
+  barcode: string | null;
+  description: string | null;
+  item_type: ItemType;
+  pricing_type: PricingType;
+  base_price: string;
+  cost_price: string;
+  track_stock: boolean;
+  use_recipe: boolean;
+  image_url: string | null;
+  is_active: boolean;
+}
+
+export interface Category {
+  id: string;
+  name: string;
+  parent_id: string | null;
+  sort_order: number;
+}
+
+export interface Unit {
+  id: string;
+  name: string;
+  symbol: string;
+  allow_decimal: boolean;
+}
+
 export interface Outlet {
   id: string;
   name: string;
