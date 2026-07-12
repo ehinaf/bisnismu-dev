@@ -66,8 +66,13 @@ function buildMockTx(overrides: Record<string, unknown> = {}) {
         Promise.resolve({ id: "txn-1", items: [], payments: [], taxes: [] }),
       ),
     },
-    transactionItem: { create: jest.fn().mockResolvedValue({}) },
+    transactionItem: {
+      create: jest.fn().mockImplementation(({ data }) => Promise.resolve({ id: "txn-item-1", ...data })),
+    },
+    transactionItemModifier: { create: jest.fn().mockResolvedValue({}) },
     transactionTax: { create: jest.fn().mockResolvedValue({}), deleteMany: jest.fn().mockResolvedValue({}) },
+    itemModifierGroup: { findMany: jest.fn().mockResolvedValue([]) },
+    modifier: { findMany: jest.fn().mockResolvedValue([]) },
     bundleComponent: { findMany: jest.fn().mockResolvedValue([]) },
     recipe: { findMany: jest.fn().mockResolvedValue([]) },
     inventory: { update: jest.fn().mockResolvedValue({}) },
@@ -252,6 +257,147 @@ describe("SalesService", () => {
       await run(dto, mockTx);
       const createArgs = mockTx.transaction.create.mock.calls[0][0].data;
       expect(createArgs.subtotal.toNumber()).toBe(75000);
+    });
+  });
+
+  describe("modifier", () => {
+    const requiredGroupAttached = [
+      {
+        item_id: "item-1",
+        modifier_group_id: "grp-1",
+        modifier_group: { id: "grp-1", name: "Level Pedas", is_required: true, min_select: 1, max_select: 1 },
+      },
+    ];
+
+    it("menolak jika grup modifier wajib tidak dipilih sama sekali", async () => {
+      const mockTx = buildMockTx({
+        itemModifierGroup: { findMany: jest.fn().mockResolvedValue(requiredGroupAttached) },
+      });
+      const dto: CreateTransactionDto = {
+        outlet_id: "outlet-1",
+        items: [{ item_id: "item-1", quantity: 1 }],
+        payments: [{ payment_channel_id: "channel-1", amount: 20000 }],
+      };
+      await expect(run(dto, mockTx)).rejects.toThrow(BadRequestException);
+    });
+
+    it("menolak modifier yang bukan dari grup yang terpasang di item ini", async () => {
+      const mockTx = buildMockTx({
+        itemModifierGroup: { findMany: jest.fn().mockResolvedValue([]) }, // tidak ada grup terpasang
+        modifier: {
+          findMany: jest.fn().mockResolvedValue([
+            { id: "mod-1", modifier_group_id: "grp-asing", name: "Extra Pedas", price_adjustment: new Prisma.Decimal(2000), ingredient_item_id: null, ingredient_qty: null },
+          ]),
+        },
+      });
+      const dto: CreateTransactionDto = {
+        outlet_id: "outlet-1",
+        items: [{ item_id: "item-1", quantity: 1, modifier_ids: ["mod-1"] }],
+        payments: [{ payment_channel_id: "channel-1", amount: 22000 }],
+      };
+      await expect(run(dto, mockTx)).rejects.toThrow(BadRequestException);
+    });
+
+    it("menolak jika pilihan melebihi max_select grup", async () => {
+      const mockTx = buildMockTx({
+        itemModifierGroup: {
+          findMany: jest.fn().mockResolvedValue([
+            {
+              item_id: "item-1",
+              modifier_group_id: "grp-1",
+              modifier_group: { id: "grp-1", name: "Topping", is_required: false, min_select: 0, max_select: 1 },
+            },
+          ]),
+        },
+        modifier: {
+          findMany: jest.fn().mockResolvedValue([
+            { id: "mod-1", modifier_group_id: "grp-1", name: "Keju", price_adjustment: new Prisma.Decimal(3000), ingredient_item_id: null, ingredient_qty: null },
+            { id: "mod-2", modifier_group_id: "grp-1", name: "Sosis", price_adjustment: new Prisma.Decimal(4000), ingredient_item_id: null, ingredient_qty: null },
+          ]),
+        },
+      });
+      const dto: CreateTransactionDto = {
+        outlet_id: "outlet-1",
+        items: [{ item_id: "item-1", quantity: 1, modifier_ids: ["mod-1", "mod-2"] }],
+        payments: [{ payment_channel_id: "channel-1", amount: 27000 }],
+      };
+      await expect(run(dto, mockTx)).rejects.toThrow(BadRequestException);
+    });
+
+    it("menambahkan price_adjustment modifier ke unit_price & subtotal", async () => {
+      const mockTx = buildMockTx({
+        itemModifierGroup: {
+          findMany: jest.fn().mockResolvedValue([
+            {
+              item_id: "item-1",
+              modifier_group_id: "grp-1",
+              modifier_group: { id: "grp-1", name: "Topping", is_required: false, min_select: 0, max_select: 2 },
+            },
+          ]),
+        },
+        modifier: {
+          findMany: jest.fn().mockResolvedValue([
+            { id: "mod-1", modifier_group_id: "grp-1", name: "Keju", price_adjustment: new Prisma.Decimal(3000), ingredient_item_id: null, ingredient_qty: null },
+          ]),
+        },
+      });
+      const dto: CreateTransactionDto = {
+        outlet_id: "outlet-1",
+        items: [{ item_id: "item-1", quantity: 1, modifier_ids: ["mod-1"] }],
+        payments: [{ payment_channel_id: "channel-1", amount: 23000 }],
+      };
+      await run(dto, mockTx);
+      const createArgs = mockTx.transaction.create.mock.calls[0][0].data;
+      expect(createArgs.subtotal.toNumber()).toBe(23000); // 20000 base + 3000 modifier
+      expect(mockTx.transactionItemModifier.create).toHaveBeenCalledWith({
+        data: {
+          transaction_item_id: "txn-item-1",
+          modifier_id: "mod-1",
+          modifier_name_snapshot: "Keju",
+          price_adjustment_snapshot: expect.objectContaining({}),
+        },
+      });
+    });
+
+    it("mengurangi stok bahan modifier (ingredient_item_id) independen dari stok item", async () => {
+      const mockTx = buildMockTx({
+        itemModifierGroup: {
+          findMany: jest.fn().mockResolvedValue([
+            {
+              item_id: "item-1",
+              modifier_group_id: "grp-1",
+              modifier_group: { id: "grp-1", name: "Topping", is_required: false, min_select: 0, max_select: 2 },
+            },
+          ]),
+        },
+        modifier: {
+          findMany: jest.fn().mockResolvedValue([
+            { id: "mod-1", modifier_group_id: "grp-1", name: "Keju", price_adjustment: new Prisma.Decimal(3000), ingredient_item_id: "ing-1", ingredient_qty: new Prisma.Decimal(1) },
+          ]),
+        },
+        item: {
+          findFirst: jest.fn().mockResolvedValue({
+            id: "item-1",
+            business_id: "biz-1",
+            name: "Nasi Goreng",
+            item_type: "product",
+            track_stock: true,
+            use_recipe: false,
+            base_price: new Prisma.Decimal(20000),
+            cost_price: new Prisma.Decimal(11000),
+          }),
+          findUniqueOrThrow: jest.fn().mockResolvedValue({ id: "ing-1", name: "Keju" }),
+        },
+      });
+      const dto: CreateTransactionDto = {
+        outlet_id: "outlet-1",
+        items: [{ item_id: "item-1", quantity: 1, modifier_ids: ["mod-1"] }],
+        payments: [{ payment_channel_id: "channel-1", amount: 23000 }],
+      };
+      await run(dto, mockTx);
+      // 1x untuk stok item Nasi Goreng sendiri, 1x untuk bahan modifier Keju
+      expect(mockTx.inventory.update).toHaveBeenCalledTimes(2);
+      expect(mockTx.stockMovement.create).toHaveBeenCalledTimes(2);
     });
   });
 

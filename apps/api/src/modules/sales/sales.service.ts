@@ -15,6 +15,14 @@ interface InventoryLockRow {
   quantity_on_hand: Prisma.Decimal | string;
 }
 
+interface ResolvedModifier {
+  modifier_id: string;
+  name: string;
+  price_adjustment: Prisma.Decimal;
+  ingredient_item_id: string | null;
+  ingredient_qty: Prisma.Decimal | null;
+}
+
 interface ResolvedItem {
   item_id: string;
   variant_id: string | null;
@@ -29,6 +37,7 @@ interface ResolvedItem {
   subtotal: Prisma.Decimal;
   served_by: string | null;
   notes: string | null;
+  modifiers: ResolvedModifier[];
 }
 
 interface TaxRow {
@@ -133,7 +142,7 @@ export class SalesService {
         // ── 11. Kembalikan transaksi lengkap ──
         return tx.transaction.findUniqueOrThrow({
           where: { id: transaction.id },
-          include: { items: true, payments: true, taxes: true },
+          include: { items: { include: { modifiers: true } }, payments: true, taxes: true },
         });
       },
       { maxWait: 10_000, timeout: 20_000 },
@@ -143,7 +152,7 @@ export class SalesService {
   async getTransactionById(businessId: string, id: string) {
     const transaction = await this.prisma.transaction.findFirst({
       where: { id, business_id: businessId },
-      include: { items: true, payments: true, taxes: true },
+      include: { items: { include: { modifiers: true } }, payments: true, taxes: true },
     });
     if (!transaction) throw new NotFoundException("Transaksi tidak ditemukan");
     return transaction;
@@ -235,7 +244,7 @@ export class SalesService {
 
         return tx.transaction.findUniqueOrThrow({
           where: { id: transaction.id },
-          include: { items: true, payments: true, taxes: true },
+          include: { items: { include: { modifiers: true } }, payments: true, taxes: true },
         });
       },
       { maxWait: 10_000, timeout: 20_000 },
@@ -298,7 +307,7 @@ export class SalesService {
             total,
             total_cost: cumulativeCost,
           },
-          include: { items: true, payments: true, taxes: true },
+          include: { items: { include: { modifiers: true } }, payments: true, taxes: true },
         });
       },
       { maxWait: 10_000, timeout: 20_000 },
@@ -336,7 +345,7 @@ export class SalesService {
 
         return tx.transaction.findUniqueOrThrow({
           where: { id: transactionId },
-          include: { items: true, payments: true, taxes: true },
+          include: { items: { include: { modifiers: true } }, payments: true, taxes: true },
         });
       },
       { maxWait: 10_000, timeout: 20_000 },
@@ -431,6 +440,15 @@ export class SalesService {
         ? new Prisma.Decimal(item.cost_price).plus(variant.cost_adjustment)
         : new Prisma.Decimal(item.cost_price);
 
+      // ── Modifier (topping, level pedas, dst) — divalidasi terhadap grup yang
+      // terpasang di item ini, lalu price_adjustment ditambahkan ke unit_price. ──
+      const resolvedModifiers = await this.resolveLineModifiers(tx, item.id, item.name, line.modifier_ids ?? []);
+      const modifierAdjustment = resolvedModifiers.reduce(
+        (sum, m) => sum.plus(m.price_adjustment),
+        new Prisma.Decimal(0),
+      );
+      unitPrice = unitPrice.plus(modifierAdjustment);
+
       const lineSubtotal = unitPrice.times(quantity);
       subtotal = subtotal.plus(lineSubtotal);
       totalCost = totalCost.plus(unitCost.times(quantity));
@@ -449,10 +467,79 @@ export class SalesService {
         subtotal: lineSubtotal,
         served_by: line.served_by ?? null,
         notes: line.notes ?? null,
+        modifiers: resolvedModifiers,
       });
     }
 
     return { resolvedItems, subtotal, totalCost };
+  }
+
+  /**
+   * Validasi modifier terpilih untuk satu baris item terhadap modifier_groups
+   * yang terpasang di item tsb (harus terpasang, harus aktif, dan mematuhi
+   * is_required/min_select/max_select tiap grup).
+   */
+  private async resolveLineModifiers(
+    tx: Prisma.TransactionClient,
+    itemId: string,
+    itemName: string,
+    modifierIds: string[],
+  ): Promise<ResolvedModifier[]> {
+    const attachedGroups = await tx.itemModifierGroup.findMany({
+      where: { item_id: itemId },
+      include: { modifier_group: true },
+    });
+
+    if (modifierIds.length === 0) {
+      const missingRequired = attachedGroups.find((g) => g.modifier_group.is_required);
+      if (missingRequired) {
+        throw new BadRequestException(
+          `Item "${itemName}" wajib memilih modifier dari grup "${missingRequired.modifier_group.name}"`,
+        );
+      }
+      return [];
+    }
+
+    const attachedGroupIds = new Set(attachedGroups.map((g) => g.modifier_group_id));
+    const modifiers = await tx.modifier.findMany({ where: { id: { in: modifierIds }, is_active: true } });
+    if (modifiers.length !== modifierIds.length) {
+      throw new NotFoundException(`Sebagian modifier untuk item "${itemName}" tidak ditemukan atau nonaktif`);
+    }
+    for (const m of modifiers) {
+      if (!attachedGroupIds.has(m.modifier_group_id)) {
+        throw new BadRequestException(`Modifier "${m.name}" tidak berlaku untuk item "${itemName}"`);
+      }
+    }
+
+    const selectedByGroup = new Map<string, number>();
+    for (const m of modifiers) {
+      selectedByGroup.set(m.modifier_group_id, (selectedByGroup.get(m.modifier_group_id) ?? 0) + 1);
+    }
+    for (const g of attachedGroups) {
+      const selected = selectedByGroup.get(g.modifier_group_id) ?? 0;
+      const group = g.modifier_group;
+      if (group.is_required && selected === 0) {
+        throw new BadRequestException(`Item "${itemName}" wajib memilih modifier dari grup "${group.name}"`);
+      }
+      if (selected < group.min_select) {
+        throw new BadRequestException(
+          `Item "${itemName}" perlu minimal ${group.min_select} pilihan dari grup "${group.name}"`,
+        );
+      }
+      if (selected > group.max_select) {
+        throw new BadRequestException(
+          `Item "${itemName}" maksimal ${group.max_select} pilihan dari grup "${group.name}"`,
+        );
+      }
+    }
+
+    return modifiers.map((m) => ({
+      modifier_id: m.id,
+      name: m.name,
+      price_adjustment: new Prisma.Decimal(m.price_adjustment),
+      ingredient_item_id: m.ingredient_item_id,
+      ingredient_qty: m.ingredient_qty ? new Prisma.Decimal(m.ingredient_qty) : null,
+    }));
   }
 
   /** Pajak & service charge aktif (semua tax aktif milik business diterapkan atas subtotal). */
@@ -479,7 +566,7 @@ export class SalesService {
 
   private async insertTransactionItems(tx: Prisma.TransactionClient, transactionId: string, items: ResolvedItem[]) {
     for (const line of items) {
-      await tx.transactionItem.create({
+      const transactionItem = await tx.transactionItem.create({
         data: {
           transaction_id: transactionId,
           item_id: line.item_id,
@@ -494,6 +581,17 @@ export class SalesService {
           notes: line.notes,
         },
       });
+
+      for (const modifier of line.modifiers) {
+        await tx.transactionItemModifier.create({
+          data: {
+            transaction_item_id: transactionItem.id,
+            modifier_id: modifier.modifier_id,
+            modifier_name_snapshot: modifier.name,
+            price_adjustment_snapshot: modifier.price_adjustment,
+          },
+        });
+      }
     }
   }
 
@@ -743,7 +841,26 @@ export class SalesService {
           line.item_name_snapshot,
         );
       }
-      // track_stock=false (jasa) → lewati, tidak menyentuh stok
+      // track_stock=false (jasa) → lewati, tidak menyentuh stok item itu sendiri
+
+      // Modifier dengan ingredient_item_id (mis. topping keju) mengurangi
+      // stok bahannya sendiri, independen dari mekanisme stok item induk.
+      for (const modifier of line.modifiers) {
+        if (!modifier.ingredient_item_id || !modifier.ingredient_qty) continue;
+        const ingredient = await tx.item.findUniqueOrThrow({ where: { id: modifier.ingredient_item_id } });
+        const qty = modifier.ingredient_qty.times(line.quantity);
+        await this.lockAndDecrementInventory(
+          tx,
+          outletId,
+          modifier.ingredient_item_id,
+          null,
+          qty,
+          "recipe_out",
+          transactionId,
+          cashierId,
+          ingredient.name,
+        );
+      }
     }
   }
 

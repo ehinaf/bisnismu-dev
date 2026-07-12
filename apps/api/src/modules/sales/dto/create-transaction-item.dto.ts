@@ -1,4 +1,4 @@
-import { IsNumber, IsOptional, IsPositive, IsString, IsUUID } from "class-validator";
+import { IsArray, IsNumber, IsOptional, IsPositive, IsString, IsUUID } from "class-validator";
 
 export class CreateTransactionItemDto {
   @IsUUID()
@@ -11,6 +11,13 @@ export class CreateTransactionItemDto {
   @IsNumber()
   @IsPositive()
   quantity!: number;
+
+  // Modifier terpilih untuk baris ini (topping, level pedas, dst).
+  // Divalidasi server-side terhadap modifier_groups yang terpasang di item ini.
+  @IsOptional()
+  @IsArray()
+  @IsUUID("4", { each: true })
+  modifier_ids?: string[];
 
   // Hanya dipakai (dan WAJIB) untuk item dengan pricing_type='open' — kasir
   // input harga manual (jasa custom, barang bekas). Untuk pricing_type lain

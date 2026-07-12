@@ -7,6 +7,7 @@ import type { JwtPayload } from "../../common/interfaces/jwt-payload.interface";
 import { ItemService } from "./item.service";
 import { VariantService } from "./variant.service";
 import { PriceTierService } from "./price-tier.service";
+import { ItemModifierGroupService } from "./item-modifier-group.service";
 import { CreateItemDto } from "./dto/create-item.dto";
 import { UpdateItemDto } from "./dto/update-item.dto";
 import { CreateVariantDto } from "./dto/create-variant.dto";
@@ -21,6 +22,7 @@ export class ItemController {
     private readonly itemService: ItemService,
     private readonly variantService: VariantService,
     private readonly priceTierService: PriceTierService,
+    private readonly itemModifierGroupService: ItemModifierGroupService,
   ) {}
 
   @Get()
@@ -107,5 +109,24 @@ export class ItemController {
     @Body() dto: UpdatePriceTierDto,
   ) {
     return this.priceTierService.update(user.business_id, id, tierId, dto);
+  }
+
+  @Get(":id/modifier-groups")
+  listModifierGroups(@CurrentUser() user: JwtPayload, @Param("id") id: string) {
+    return this.itemModifierGroupService.list(user.business_id, id);
+  }
+
+  @UseGuards(RolesGuard)
+  @Roles("owner", "admin", "manager")
+  @Post(":id/modifier-groups/:groupId")
+  attachModifierGroup(@CurrentUser() user: JwtPayload, @Param("id") id: string, @Param("groupId") groupId: string) {
+    return this.itemModifierGroupService.attach(user.business_id, id, groupId);
+  }
+
+  @UseGuards(RolesGuard)
+  @Roles("owner", "admin", "manager")
+  @Delete(":id/modifier-groups/:groupId")
+  detachModifierGroup(@CurrentUser() user: JwtPayload, @Param("id") id: string, @Param("groupId") groupId: string) {
+    return this.itemModifierGroupService.detach(user.business_id, id, groupId);
   }
 }
