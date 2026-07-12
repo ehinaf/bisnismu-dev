@@ -1,94 +1,46 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
-import { cn } from "@/lib/utils";
-import { getToken, getUser } from "@/lib/auth";
-import { ThemeToggle } from "@/components/theme-toggle";
-import { LogoutButton } from "@/components/logout-button";
-
-const MANAGEMENT_ROLES = ["owner", "admin", "manager"];
+import { useRouter } from "next/navigation";
+import { getToken } from "@/lib/auth";
+import { apiClient } from "@/lib/api-client";
+import { useOutletStore } from "@/lib/stores/outlet-store";
+import { Sidebar } from "@/components/shell/sidebar";
+import { Topbar } from "@/components/shell/topbar";
+import { MobileSidebar } from "@/components/shell/mobile-sidebar";
+import type { Outlet } from "@/lib/types";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
-  const pathname = usePathname();
   const [ready, setReady] = useState(false);
-  const [userName, setUserName] = useState<string | null>(null);
-  const [canManage, setCanManage] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const setOutlets = useOutletStore((s) => s.setOutlets);
 
   useEffect(() => {
     if (!getToken()) {
       router.replace("/login");
       return;
     }
-    const user = getUser();
-    setUserName(user?.name ?? null);
-    setCanManage(!!user && MANAGEMENT_ROLES.includes(user.role));
     setReady(true);
-  }, [router]);
+    apiClient
+      .get<Outlet[]>("/tenant/outlets")
+      .then(setOutlets)
+      .catch(() => {
+        // Gagal memuat outlet tidak boleh memblokir seluruh app; halaman yang
+        // membutuhkannya menampilkan error masing-masing.
+      });
+  }, [router, setOutlets]);
 
   if (!ready) return null;
 
   return (
-    <div className="flex min-h-screen flex-col">
-      <header className="no-print sticky top-0 z-30 flex h-16 items-center justify-between gap-4 border-b border-border bg-card/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-card/80">
-        <div className="flex items-center gap-6">
-          <div className="flex items-center gap-2.5">
-            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-sm font-bold text-primary-foreground">
-              B
-            </span>
-            <div className="flex flex-col leading-tight">
-              <span className="text-sm font-semibold">BisnisMu</span>
-              {userName && <span className="text-xs text-muted-foreground">{userName}</span>}
-            </div>
-          </div>
-          <nav className="flex items-center gap-1">
-            <NavLink href="/dashboard" active={pathname === "/dashboard"}>
-              Kasir
-            </NavLink>
-            <NavLink href="/tables" active={pathname.startsWith("/tables")}>
-              Meja
-            </NavLink>
-            {canManage && (
-              <NavLink href="/catalog" active={pathname === "/catalog"}>
-                Produk
-              </NavLink>
-            )}
-            {canManage && (
-              <NavLink href="/customers" active={pathname.startsWith("/customers")}>
-                Pelanggan
-              </NavLink>
-            )}
-            {canManage && (
-              <NavLink href="/reports" active={pathname === "/reports"}>
-                Laporan
-              </NavLink>
-            )}
-          </nav>
-        </div>
-        <div className="flex items-center gap-1">
-          <ThemeToggle />
-          <LogoutButton />
-        </div>
-      </header>
-      <main className="flex-1">{children}</main>
+    <div className="min-h-screen lg:pl-[210px]">
+      <Sidebar />
+      <MobileSidebar open={menuOpen} onClose={() => setMenuOpen(false)} />
+      <div className="flex min-h-screen flex-col">
+        <Topbar onOpenMenu={() => setMenuOpen(true)} />
+        <main className="flex flex-1 flex-col">{children}</main>
+      </div>
     </div>
-  );
-}
-
-function NavLink({ href, active, children }: { href: string; active: boolean; children: React.ReactNode }) {
-  return (
-    <Link
-      href={href}
-      className={cn(
-        "rounded-lg px-3 py-1.5 text-sm font-medium transition-colors",
-        active
-          ? "bg-primary text-primary-foreground shadow-sm"
-          : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
-      )}
-    >
-      {children}
-    </Link>
   );
 }
