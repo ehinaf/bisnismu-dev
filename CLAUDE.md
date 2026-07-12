@@ -50,3 +50,24 @@ Dokumentasi: docs/PRD_bisnismu.md, docs/skema_database_bisnismu_v2.sql
 - [ ] Verify output setelah tiap step
 - [ ] Commit ketika milestone selesai
 - [ ] Report status (DONE/BLOCKER/WAITING)
+
+## Fase 0 Workflow (Automatic Execution)
+
+### Saat prompt: "Start Fase 0 Step 2"
+1. Baca docs/BISNISMU_START_HERE.md bagian Fase 0
+2. Execute setiap step secara berurutan:
+   - Create folder/file
+   - Verify
+   - Test jika perlu
+   - Commit jika done
+3. Jika ada blocker → tanya (pause)
+4. Continue ke step berikutnya
+5. Report progress setiap step
+
+### Autonomous Execution Checklist
+- [ ] Baca requirement docs dulu
+- [ ] Buat plan otomatis (jangan tanya)
+- [ ] Execute step-by-step
+- [ ] Verify output setelah tiap step
+- [ ] Commit ketika milestone selesai
+- [ ] Report status (DONE/BLOCKER/WAITING)
