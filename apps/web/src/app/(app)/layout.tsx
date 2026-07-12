@@ -32,11 +32,16 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex min-h-screen flex-col">
-      <header className="no-print flex items-center justify-between gap-4 border-b border-border bg-card px-4 py-3">
+      <header className="no-print sticky top-0 z-30 flex h-16 items-center justify-between gap-4 border-b border-border bg-card/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-card/80">
         <div className="flex items-center gap-6">
-          <div className="flex flex-col">
-            <span className="font-semibold">BisnisMu</span>
-            {userName && <span className="text-xs text-muted-foreground">{userName}</span>}
+          <div className="flex items-center gap-2.5">
+            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-sm font-bold text-primary-foreground">
+              B
+            </span>
+            <div className="flex flex-col leading-tight">
+              <span className="text-sm font-semibold">BisnisMu</span>
+              {userName && <span className="text-xs text-muted-foreground">{userName}</span>}
+            </div>
           </div>
           <nav className="flex items-center gap-1">
             <NavLink href="/dashboard" active={pathname === "/dashboard"}>
@@ -77,8 +82,10 @@ function NavLink({ href, active, children }: { href: string; active: boolean; ch
     <Link
       href={href}
       className={cn(
-        "rounded-md px-3 py-1.5 text-sm font-medium transition-colors hover:bg-accent",
-        active ? "bg-accent text-accent-foreground" : "text-muted-foreground",
+        "rounded-lg px-3 py-1.5 text-sm font-medium transition-colors",
+        active
+          ? "bg-primary text-primary-foreground shadow-sm"
+          : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
       )}
     >
       {children}

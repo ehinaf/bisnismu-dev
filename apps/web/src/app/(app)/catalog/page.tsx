@@ -7,6 +7,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
+import { PageHeader } from "@/components/ui/page-header";
+import { Badge } from "@/components/ui/badge";
+import { Package, PackageOpen, Plus } from "lucide-react";
 import { apiClient, ApiError } from "@/lib/api-client";
 import { getUser } from "@/lib/auth";
 import { formatCurrency } from "@/lib/format";
@@ -217,13 +220,19 @@ export default function CatalogPage() {
   if (!ready) return null;
 
   return (
-    <div className="mx-auto flex max-w-5xl flex-col gap-4 p-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-lg font-semibold">Kelola Produk</h1>
-        <Button onClick={openCreateForm}>+ Produk Baru</Button>
-      </div>
+    <div className="mx-auto flex max-w-5xl flex-col gap-5 p-4 sm:p-6">
+      <PageHeader
+        icon={Package}
+        title="Kelola Produk"
+        description="Katalog barang, jasa, dan stok awal"
+        action={
+          <Button onClick={openCreateForm}>
+            <Plus className="h-4 w-4" /> Produk Baru
+          </Button>
+        }
+      />
 
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      {error && <p className="rounded-lg bg-destructive/10 px-4 py-3 text-sm text-destructive">{error}</p>}
 
       {formOpen && (
         <Card>
@@ -392,42 +401,44 @@ export default function CatalogPage() {
           {loading ? (
             <p className="p-4 text-sm text-muted-foreground">Memuat produk...</p>
           ) : items.length === 0 ? (
-            <p className="p-4 text-sm text-muted-foreground">Belum ada produk. Klik &quot;+ Produk Baru&quot; untuk mulai.</p>
+            <div className="flex flex-col items-center gap-3 py-12 text-center">
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted">
+                <PackageOpen className="h-6 w-6 text-muted-foreground/60" />
+              </div>
+              <p className="text-sm text-muted-foreground">Belum ada produk. Tambahkan produk pertama Anda.</p>
+              <Button size="sm" onClick={openCreateForm}>
+                <Plus className="h-4 w-4" /> Produk Baru
+              </Button>
+            </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-border text-left text-xs text-muted-foreground">
-                    <th className="p-3 font-medium">Nama</th>
-                    <th className="p-3 font-medium">Kategori</th>
-                    <th className="p-3 font-medium">Jenis</th>
-                    <th className="p-3 text-right font-medium">Harga</th>
-                    <th className="p-3 font-medium">Status</th>
-                    <th className="p-3 font-medium">Aksi</th>
+                  <tr className="border-b border-border bg-muted/50 text-left text-xs uppercase tracking-wide text-muted-foreground">
+                    <th className="px-4 py-3 font-medium">Nama</th>
+                    <th className="px-4 py-3 font-medium">Kategori</th>
+                    <th className="px-4 py-3 font-medium">Jenis</th>
+                    <th className="px-4 py-3 text-right font-medium">Harga</th>
+                    <th className="px-4 py-3 font-medium">Status</th>
+                    <th className="px-4 py-3 text-right font-medium">Aksi</th>
                   </tr>
                 </thead>
                 <tbody>
                   {items.map((item) => (
-                    <tr key={item.id} className="border-b border-border last:border-0">
-                      <td className="p-3">{item.name}</td>
-                      <td className="p-3">{categoryName(item.category_id)}</td>
-                      <td className="p-3">{ITEM_TYPE_LABEL[item.item_type]}</td>
-                      <td className="p-3 text-right">
+                    <tr key={item.id} className="border-b border-border transition-colors last:border-0 hover:bg-muted/40">
+                      <td className="px-4 py-3 font-medium">{item.name}</td>
+                      <td className="px-4 py-3 text-muted-foreground">{categoryName(item.category_id)}</td>
+                      <td className="px-4 py-3 text-muted-foreground">{ITEM_TYPE_LABEL[item.item_type]}</td>
+                      <td className="px-4 py-3 text-right tabular-nums">
                         {item.pricing_type === "open" ? "Bebas" : formatCurrency(item.base_price)}
                       </td>
-                      <td className="p-3">
-                        <span
-                          className={
-                            item.is_active
-                              ? "rounded-full bg-green-100 px-2 py-0.5 text-xs text-green-700 dark:bg-green-950 dark:text-green-400"
-                              : "rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground"
-                          }
-                        >
+                      <td className="px-4 py-3">
+                        <Badge variant={item.is_active ? "success" : "muted"}>
                           {item.is_active ? "Aktif" : "Nonaktif"}
-                        </span>
+                        </Badge>
                       </td>
-                      <td className="p-3">
-                        <div className="flex gap-2">
+                      <td className="px-4 py-3">
+                        <div className="flex justify-end gap-2">
                           <Button size="sm" variant="outline" onClick={() => openEditForm(item)}>
                             Ubah
                           </Button>

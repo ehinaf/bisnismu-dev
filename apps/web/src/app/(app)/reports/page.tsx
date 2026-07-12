@@ -6,6 +6,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PageHeader } from "@/components/ui/page-header";
+import { StatCard } from "@/components/ui/stat-card";
+import { BarChart3, Receipt, TrendingDown, TrendingUp, Wallet } from "lucide-react";
 import { apiClient, ApiError } from "@/lib/api-client";
 import { getUser } from "@/lib/auth";
 import { formatCurrency } from "@/lib/format";
@@ -102,9 +105,10 @@ export default function ReportsPage() {
   if (!ready) return null;
 
   return (
-    <div className="mx-auto flex max-w-5xl flex-col gap-4 p-4">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <h1 className="text-lg font-semibold">Laporan</h1>
+    <div className="mx-auto flex max-w-5xl flex-col gap-5 p-4 sm:p-6">
+      <PageHeader icon={BarChart3} title="Laporan" description="Ringkasan penjualan, laba, dan performa" />
+
+      <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
         <div className="flex flex-wrap items-end gap-2">
           <Button size="sm" variant="outline" onClick={() => applyPreset(0)}>
             Hari Ini
@@ -133,20 +137,21 @@ export default function ReportsPage() {
         </div>
       </div>
 
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      {error && <p className="rounded-lg bg-destructive/10 px-4 py-3 text-sm text-destructive">{error}</p>}
       {loading && <p className="text-sm text-muted-foreground">Memuat laporan...</p>}
 
       {!loading && profitLoss && (
         <>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <KpiCard label="Penjualan Kotor" value={formatCurrency(profitLoss.gross_sales)} />
-            <KpiCard label="Pengeluaran" value={formatCurrency(profitLoss.total_expenses)} />
-            <KpiCard
+            <StatCard icon={Wallet} label="Penjualan Kotor" value={formatCurrency(profitLoss.gross_sales)} />
+            <StatCard icon={TrendingDown} label="Pengeluaran" value={formatCurrency(profitLoss.total_expenses)} />
+            <StatCard
+              icon={TrendingUp}
               label="Laba Bersih"
               value={formatCurrency(profitLoss.net_profit)}
               accent={Number(profitLoss.net_profit) >= 0 ? "positive" : "negative"}
             />
-            <KpiCard label="Jumlah Transaksi" value={String(profitLoss.transaction_count)} />
+            <StatCard icon={Receipt} label="Jumlah Transaksi" value={String(profitLoss.transaction_count)} />
           </div>
 
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -160,7 +165,7 @@ export default function ReportsPage() {
                 ) : (
                   <table className="w-full text-sm">
                     <thead>
-                      <tr className="border-b border-border text-left text-xs text-muted-foreground">
+                      <tr className="border-b border-border bg-muted/50 text-left text-xs uppercase tracking-wide text-muted-foreground">
                         <th className="pb-2 font-medium">Produk</th>
                         <th className="pb-2 font-medium">Qty</th>
                         <th className="pb-2 text-right font-medium">Omzet</th>
@@ -168,7 +173,7 @@ export default function ReportsPage() {
                     </thead>
                     <tbody>
                       {topItems.map((item) => (
-                        <tr key={item.item_id ?? item.item_name} className="border-b border-border last:border-0">
+                        <tr key={item.item_id ?? item.item_name} className="border-b border-border transition-colors last:border-0 hover:bg-muted/40">
                           <td className="py-1.5">{item.item_name}</td>
                           <td className="py-1.5">{item.total_qty}</td>
                           <td className="py-1.5 text-right">{formatCurrency(item.total_revenue)}</td>
@@ -190,7 +195,7 @@ export default function ReportsPage() {
                 ) : (
                   <table className="w-full text-sm">
                     <thead>
-                      <tr className="border-b border-border text-left text-xs text-muted-foreground">
+                      <tr className="border-b border-border bg-muted/50 text-left text-xs uppercase tracking-wide text-muted-foreground">
                         <th className="pb-2 font-medium">Metode</th>
                         <th className="pb-2 font-medium">Transaksi</th>
                         <th className="pb-2 text-right font-medium">Total</th>
@@ -198,7 +203,7 @@ export default function ReportsPage() {
                     </thead>
                     <tbody>
                       {paymentMethods.map((pm) => (
-                        <tr key={pm.channel_name} className="border-b border-border last:border-0">
+                        <tr key={pm.channel_name} className="border-b border-border transition-colors last:border-0 hover:bg-muted/40">
                           <td className="py-1.5">{pm.channel_name}</td>
                           <td className="py-1.5">{pm.transaction_count}</td>
                           <td className="py-1.5 text-right">{formatCurrency(pm.total_amount)}</td>
@@ -222,7 +227,7 @@ export default function ReportsPage() {
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
-                      <tr className="border-b border-border text-left text-xs text-muted-foreground">
+                      <tr className="border-b border-border bg-muted/50 text-left text-xs uppercase tracking-wide text-muted-foreground">
                         <th className="pb-2 font-medium">Tanggal</th>
                         <th className="pb-2 font-medium">Transaksi</th>
                         <th className="pb-2 text-right font-medium">Penjualan Kotor</th>
@@ -233,7 +238,7 @@ export default function ReportsPage() {
                     </thead>
                     <tbody>
                       {dailySales.map((row) => (
-                        <tr key={row.sales_date} className="border-b border-border last:border-0">
+                        <tr key={row.sales_date} className="border-b border-border transition-colors last:border-0 hover:bg-muted/40">
                           <td className="py-1.5">{new Date(row.sales_date).toLocaleDateString("id-ID")}</td>
                           <td className="py-1.5">{row.transaction_count}</td>
                           <td className="py-1.5 text-right">{formatCurrency(row.gross_sales)}</td>
@@ -251,26 +256,5 @@ export default function ReportsPage() {
         </>
       )}
     </div>
-  );
-}
-
-function KpiCard({ label, value, accent }: { label: string; value: string; accent?: "positive" | "negative" }) {
-  return (
-    <Card>
-      <CardContent className="flex flex-col gap-1 p-4">
-        <span className="text-xs text-muted-foreground">{label}</span>
-        <span
-          className={
-            accent === "positive"
-              ? "text-lg font-semibold text-green-600 dark:text-green-400"
-              : accent === "negative"
-                ? "text-lg font-semibold text-destructive"
-                : "text-lg font-semibold"
-          }
-        >
-          {value}
-        </span>
-      </CardContent>
-    </Card>
   );
 }

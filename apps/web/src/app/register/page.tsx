@@ -46,12 +46,22 @@ export default function RegisterPage() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center px-4 py-8">
-      <Card className="w-full max-w-sm">
-        <CardHeader>
-          <CardTitle className="text-2xl">Daftarkan Usaha</CardTitle>
-        </CardHeader>
-        <CardContent>
+    <main className="flex min-h-screen items-center justify-center bg-muted/30 px-4 py-8">
+      <div className="w-full max-w-sm">
+        <div className="mb-6 flex flex-col items-center gap-3 text-center">
+          <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary text-lg font-bold text-primary-foreground shadow-sm">
+            B
+          </span>
+          <div>
+            <h1 className="text-xl font-semibold tracking-tight">Mulai kelola usaha Anda</h1>
+            <p className="text-sm text-muted-foreground">Gratis, siap dipakai dalam hitungan menit</p>
+          </div>
+        </div>
+        <Card className="w-full">
+          <CardHeader>
+            <CardTitle className="text-lg">Daftarkan Usaha</CardTitle>
+          </CardHeader>
+          <CardContent>
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="business_name">Nama Usaha</Label>
@@ -95,8 +105,9 @@ export default function RegisterPage() {
               </Link>
             </p>
           </form>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      </div>
     </main>
   );
 }

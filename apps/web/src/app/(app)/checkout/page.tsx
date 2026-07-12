@@ -7,6 +7,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
+import { PageHeader } from "@/components/ui/page-header";
+import { CreditCard } from "lucide-react";
 import { apiClient, ApiError } from "@/lib/api-client";
 import { formatCurrency } from "@/lib/format";
 import { cartSubtotal, useCartStore } from "@/lib/stores/cart-store";
@@ -72,7 +74,8 @@ export default function CheckoutPage() {
   if (loading) return <p className="p-4 text-sm text-muted-foreground">Memuat...</p>;
 
   return (
-    <div className="mx-auto flex max-w-lg flex-col gap-4 p-4">
+    <div className="mx-auto flex max-w-lg flex-col gap-5 p-4 sm:p-6">
+      <PageHeader icon={CreditCard} title="Pembayaran" description="Tinjau pesanan lalu selesaikan pembayaran" backHref="/dashboard" backLabel="Kembali ke Kasir" />
       <Card>
         <CardHeader>
           <CardTitle>Review Pesanan</CardTitle>
@@ -120,15 +123,15 @@ export default function CheckoutPage() {
               placeholder={String(subtotal)}
             />
           </div>
-          <div className="flex justify-between text-sm">
+          <div className="flex items-center justify-between rounded-lg bg-muted/50 px-3 py-2.5 text-sm">
             <span className="text-muted-foreground">Kembalian</span>
-            <span className="font-semibold">{formatCurrency(change)}</span>
+            <span className="text-base font-semibold tabular-nums">{formatCurrency(change)}</span>
           </div>
 
-          {error && <p className="text-sm text-destructive">{error}</p>}
+          {error && <p className="rounded-lg bg-destructive/10 px-4 py-3 text-sm text-destructive">{error}</p>}
 
           <Button size="lg" disabled={submitting || !channelId} onClick={handleSubmit}>
-            {submitting ? "Memproses..." : "Bayar & Simpan"}
+            {submitting ? "Memproses..." : `Bayar ${formatCurrency(subtotal)}`}
           </Button>
         </CardContent>
       </Card>

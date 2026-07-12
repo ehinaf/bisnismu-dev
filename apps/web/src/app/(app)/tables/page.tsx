@@ -6,6 +6,10 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PageHeader } from "@/components/ui/page-header";
+import { Badge, type BadgeProps } from "@/components/ui/badge";
+import { EmptyState } from "@/components/ui/empty-state";
+import { LayoutGrid, Plus, Users } from "lucide-react";
 import { apiClient, ApiError } from "@/lib/api-client";
 import { getUser } from "@/lib/auth";
 import { cn } from "@/lib/utils";
@@ -14,11 +18,18 @@ import type { DiningTable, OpenBillTransaction, Outlet } from "@/lib/types";
 
 const MANAGEMENT_ROLES = ["owner", "admin", "manager"];
 
-const STATUS_STYLE: Record<string, string> = {
-  available: "border-green-300 bg-green-50 dark:border-green-800 dark:bg-green-950",
-  occupied: "border-orange-300 bg-orange-50 dark:border-orange-800 dark:bg-orange-950",
-  reserved: "border-blue-300 bg-blue-50 dark:border-blue-800 dark:bg-blue-950",
-  inactive: "border-border bg-muted opacity-60",
+const STATUS_ACCENT: Record<string, string> = {
+  available: "before:bg-green-500",
+  occupied: "before:bg-orange-500",
+  reserved: "before:bg-blue-500",
+  inactive: "before:bg-muted-foreground/40",
+};
+
+const STATUS_VARIANT: Record<string, BadgeProps["variant"]> = {
+  available: "success",
+  occupied: "warning",
+  reserved: "info",
+  inactive: "muted",
 };
 
 const STATUS_LABEL: Record<string, string> = {
@@ -97,13 +108,21 @@ export default function TablesPage() {
   }
 
   return (
-    <div className="mx-auto flex max-w-5xl flex-col gap-4 p-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-lg font-semibold">Meja</h1>
-        {canManage && <Button onClick={() => setFormOpen((v) => !v)}>+ Meja Baru</Button>}
-      </div>
+    <div className="mx-auto flex max-w-5xl flex-col gap-5 p-4 sm:p-6">
+      <PageHeader
+        icon={LayoutGrid}
+        title="Meja"
+        description="Denah meja & alur open bill dine-in"
+        action={
+          canManage && (
+            <Button onClick={() => setFormOpen((v) => !v)}>
+              <Plus className="h-4 w-4" /> Meja Baru
+            </Button>
+          )
+        }
+      />
 
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      {error && <p className="rounded-lg bg-destructive/10 px-4 py-3 text-sm text-destructive">{error}</p>}
 
       {formOpen && (
         <Card>
@@ -152,40 +171,56 @@ export default function TablesPage() {
       {loading ? (
         <p className="text-sm text-muted-foreground">Memuat meja...</p>
       ) : tables.length === 0 ? (
-        <p className="text-sm text-muted-foreground">
-          Belum ada meja. {canManage ? 'Klik "+ Meja Baru" untuk mulai.' : "Hubungi admin untuk menambah meja."}
-        </p>
+        <EmptyState
+          icon={LayoutGrid}
+          title="Belum ada meja"
+          description={canManage ? "Tambahkan meja pertama untuk mulai." : "Hubungi admin untuk menambah meja."}
+          action={
+            canManage ? (
+              <Button size="sm" onClick={() => setFormOpen(true)}>
+                <Plus className="h-4 w-4" /> Meja Baru
+              </Button>
+            ) : undefined
+          }
+        />
       ) : (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
           {tables.map((table) => {
             const bill = billForTable(table.id);
+            const disabled = table.status === "inactive";
             return (
-              <Card
+              <button
                 key={table.id}
-                role="button"
-                tabIndex={0}
-                onClick={() => table.status !== "inactive" && router.push(`/tables/${table.id}`)}
-                onKeyDown={(e) => {
-                  if ((e.key === "Enter" || e.key === " ") && table.status !== "inactive") {
-                    router.push(`/tables/${table.id}`);
-                  }
-                }}
+                type="button"
+                disabled={disabled}
+                onClick={() => !disabled && router.push(`/tables/${table.id}`)}
                 className={cn(
-                  "cursor-pointer select-none border-2 transition-colors",
-                  STATUS_STYLE[table.status] ?? "",
-                  table.status === "inactive" && "cursor-not-allowed",
+                  "group relative flex flex-col gap-2 overflow-hidden rounded-xl border border-border bg-card p-4 text-left shadow-sm transition-all",
+                  "before:absolute before:inset-y-0 before:left-0 before:w-1",
+                  STATUS_ACCENT[table.status] ?? "before:bg-border",
+                  disabled
+                    ? "cursor-not-allowed opacity-60"
+                    : "hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:translate-y-0",
                 )}
               >
-                <CardContent className="flex flex-col gap-1 p-4">
+                <div className="flex items-start justify-between gap-2">
                   <span className="text-base font-semibold">{table.name}</span>
-                  {table.area && <span className="text-xs text-muted-foreground">{table.area}</span>}
-                  {table.capacity && <span className="text-xs text-muted-foreground">Kapasitas {table.capacity}</span>}
-                  <span className="mt-1 text-xs font-medium">{STATUS_LABEL[table.status] ?? table.status}</span>
-                  {bill && (
-                    <span className="text-sm font-semibold text-primary">{formatCurrency(bill.total)}</span>
+                  <Badge variant={STATUS_VARIANT[table.status] ?? "muted"}>
+                    {STATUS_LABEL[table.status] ?? table.status}
+                  </Badge>
+                </div>
+                <div className="flex flex-wrap gap-x-3 text-xs text-muted-foreground">
+                  {table.area && <span>{table.area}</span>}
+                  {table.capacity && (
+                    <span className="inline-flex items-center gap-1">
+                      <Users className="h-3 w-3" /> {table.capacity}
+                    </span>
                   )}
-                </CardContent>
-              </Card>
+                </div>
+                {bill && (
+                  <span className="mt-1 text-sm font-bold tabular-nums text-primary">{formatCurrency(bill.total)}</span>
+                )}
+              </button>
             );
           })}
         </div>

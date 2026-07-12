@@ -9,6 +9,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
+import { PageHeader } from "@/components/ui/page-header";
+import { LayoutGrid } from "lucide-react";
 import { apiClient, ApiError } from "@/lib/api-client";
 import { formatCurrency } from "@/lib/format";
 import type { CartItem } from "@/lib/stores/cart-store";
@@ -152,17 +154,16 @@ export default function TableBillPage({ params }: { params: Promise<{ tableId: s
   if (!table) return <p className="p-4 text-sm text-destructive">Meja tidak ditemukan.</p>;
 
   return (
-    <div className="mx-auto flex max-w-5xl flex-col gap-4 p-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <Button variant="ghost" size="sm" onClick={() => router.push("/tables")}>
-            ← Kembali ke Meja
-          </Button>
-          <h1 className="text-lg font-semibold">{table.name}</h1>
-        </div>
-      </div>
+    <div className="mx-auto flex max-w-5xl flex-col gap-5 p-4 sm:p-6">
+      <PageHeader
+        icon={LayoutGrid}
+        title={table.name}
+        description={table.area ?? undefined}
+        backHref="/tables"
+        backLabel="Kembali ke Meja"
+      />
 
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      {error && <p className="rounded-lg bg-destructive/10 px-4 py-3 text-sm text-destructive">{error}</p>}
 
       {!bill ? (
         <div className="flex flex-1 flex-col gap-4 lg:flex-row">

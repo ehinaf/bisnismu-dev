@@ -6,6 +6,10 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PageHeader } from "@/components/ui/page-header";
+import { Badge, type BadgeProps } from "@/components/ui/badge";
+import { StatCard } from "@/components/ui/stat-card";
+import { User } from "lucide-react";
 import { apiClient, ApiError } from "@/lib/api-client";
 import { getUser } from "@/lib/auth";
 import { formatCurrency } from "@/lib/format";
@@ -13,11 +17,11 @@ import type { Customer, CustomerReceivable, ReceivableStatus } from "@/lib/types
 
 const MANAGEMENT_ROLES = ["owner", "admin", "manager"];
 
-const STATUS_BADGE: Record<ReceivableStatus, string> = {
-  outstanding: "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-400",
-  partially_paid: "bg-yellow-100 text-yellow-700 dark:bg-yellow-950 dark:text-yellow-400",
-  paid: "bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-400",
-  written_off: "bg-muted text-muted-foreground",
+const STATUS_VARIANT: Record<ReceivableStatus, BadgeProps["variant"]> = {
+  outstanding: "danger",
+  partially_paid: "warning",
+  paid: "success",
+  written_off: "muted",
 };
 
 const STATUS_LABEL: Record<ReceivableStatus, string> = {
@@ -113,16 +117,16 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
   if (!customer) return <p className="p-4 text-sm text-destructive">Pelanggan tidak ditemukan.</p>;
 
   return (
-    <div className="mx-auto flex max-w-3xl flex-col gap-4 p-4">
-      <div>
-        <Button variant="ghost" size="sm" onClick={() => router.push("/customers")}>
-          ← Kembali ke Pelanggan
-        </Button>
-        <h1 className="text-lg font-semibold">{customer.name ?? "(tanpa nama)"}</h1>
-        {customer.phone && <p className="text-sm text-muted-foreground">{customer.phone}</p>}
-      </div>
+    <div className="mx-auto flex max-w-3xl flex-col gap-5 p-4 sm:p-6">
+      <PageHeader
+        icon={User}
+        title={customer.name ?? "(tanpa nama)"}
+        description={customer.phone ?? undefined}
+        backHref="/customers"
+        backLabel="Kembali ke Pelanggan"
+      />
 
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      {error && <p className="rounded-lg bg-destructive/10 px-4 py-3 text-sm text-destructive">{error}</p>}
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <StatCard label="Total Belanja" value={formatCurrency(customer.total_spent)} />
@@ -155,9 +159,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
                     </span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className={`rounded-full px-2 py-0.5 text-xs ${STATUS_BADGE[r.status]}`}>
-                      {STATUS_LABEL[r.status]}
-                    </span>
+                    <Badge variant={STATUS_VARIANT[r.status]}>{STATUS_LABEL[r.status]}</Badge>
                     {(r.status === "outstanding" || r.status === "partially_paid") && payingId !== r.id && (
                       <Button size="sm" onClick={() => startPayment(r)}>
                         Bayar Cicilan
@@ -212,18 +214,5 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
         </CardContent>
       </Card>
     </div>
-  );
-}
-
-function StatCard({ label, value, accent }: { label: string; value: string; accent?: "negative" }) {
-  return (
-    <Card>
-      <CardContent className="flex flex-col gap-1 p-4">
-        <span className="text-xs text-muted-foreground">{label}</span>
-        <span className={accent === "negative" ? "text-lg font-semibold text-destructive" : "text-lg font-semibold"}>
-          {value}
-        </span>
-      </CardContent>
-    </Card>
   );
 }

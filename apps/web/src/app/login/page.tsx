@@ -38,12 +38,22 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center px-4">
-      <Card className="w-full max-w-sm">
-        <CardHeader>
-          <CardTitle className="text-2xl">Masuk ke BisnisMu</CardTitle>
-        </CardHeader>
-        <CardContent>
+    <main className="flex min-h-screen items-center justify-center bg-muted/30 px-4 py-8">
+      <div className="w-full max-w-sm">
+        <div className="mb-6 flex flex-col items-center gap-3 text-center">
+          <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary text-lg font-bold text-primary-foreground shadow-sm">
+            B
+          </span>
+          <div>
+            <h1 className="text-xl font-semibold tracking-tight">Selamat datang kembali</h1>
+            <p className="text-sm text-muted-foreground">Masuk untuk mulai berjualan</p>
+          </div>
+        </div>
+        <Card className="w-full">
+          <CardHeader>
+            <CardTitle className="text-lg">Masuk ke BisnisMu</CardTitle>
+          </CardHeader>
+          <CardContent>
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="email">Email</Label>
@@ -78,8 +88,9 @@ export default function LoginPage() {
               </Link>
             </p>
           </form>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      </div>
     </main>
   );
 }

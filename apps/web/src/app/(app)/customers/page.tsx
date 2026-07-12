@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PageHeader } from "@/components/ui/page-header";
+import { Plus, Users } from "lucide-react";
 import { apiClient, ApiError } from "@/lib/api-client";
 import { getUser } from "@/lib/auth";
 import { formatCurrency } from "@/lib/format";
@@ -128,13 +130,19 @@ export default function CustomersPage() {
   if (!ready) return null;
 
   return (
-    <div className="mx-auto flex max-w-5xl flex-col gap-4 p-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-lg font-semibold">Pelanggan</h1>
-        <Button onClick={openCreateForm}>+ Pelanggan Baru</Button>
-      </div>
+    <div className="mx-auto flex max-w-5xl flex-col gap-5 p-4 sm:p-6">
+      <PageHeader
+        icon={Users}
+        title="Pelanggan"
+        description="Data pelanggan, poin loyalti, dan kasbon"
+        action={
+          <Button onClick={openCreateForm}>
+            <Plus className="h-4 w-4" /> Pelanggan Baru
+          </Button>
+        }
+      />
 
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      {error && <p className="rounded-lg bg-destructive/10 px-4 py-3 text-sm text-destructive">{error}</p>}
 
       {formOpen && (
         <Card>
@@ -187,24 +195,32 @@ export default function CustomersPage() {
           {loading ? (
             <p className="p-4 text-sm text-muted-foreground">Memuat pelanggan...</p>
           ) : customers.length === 0 ? (
-            <p className="p-4 text-sm text-muted-foreground">Belum ada pelanggan. Klik &quot;+ Pelanggan Baru&quot; untuk mulai.</p>
+            <div className="flex flex-col items-center gap-3 py-12 text-center">
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted">
+                <Users className="h-6 w-6 text-muted-foreground/60" />
+              </div>
+              <p className="text-sm text-muted-foreground">Belum ada pelanggan. Tambahkan pelanggan pertama Anda.</p>
+              <Button size="sm" onClick={openCreateForm}>
+                <Plus className="h-4 w-4" /> Pelanggan Baru
+              </Button>
+            </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-border text-left text-xs text-muted-foreground">
-                    <th className="p-3 font-medium">Nama</th>
-                    <th className="p-3 font-medium">Telepon</th>
-                    <th className="p-3 text-right font-medium">Total Belanja</th>
-                    <th className="p-3 text-right font-medium">Poin</th>
-                    <th className="p-3 text-right font-medium">Limit Kasbon</th>
-                    <th className="p-3 font-medium">Aksi</th>
+                  <tr className="border-b border-border bg-muted/50 text-left text-xs uppercase tracking-wide text-muted-foreground">
+                    <th className="px-4 py-3 font-medium">Nama</th>
+                    <th className="px-4 py-3 font-medium">Telepon</th>
+                    <th className="px-4 py-3 text-right font-medium">Total Belanja</th>
+                    <th className="px-4 py-3 text-right font-medium">Poin</th>
+                    <th className="px-4 py-3 text-right font-medium">Limit Kasbon</th>
+                    <th className="px-4 py-3 text-right font-medium">Aksi</th>
                   </tr>
                 </thead>
                 <tbody>
                   {customers.map((c) => (
-                    <tr key={c.id} className="border-b border-border last:border-0">
-                      <td className="p-3">
+                    <tr key={c.id} className="border-b border-border transition-colors last:border-0 hover:bg-muted/40">
+                      <td className="px-4 py-3">
                         <button
                           className="font-medium text-primary hover:underline"
                           onClick={() => router.push(`/customers/${c.id}`)}
@@ -212,12 +228,12 @@ export default function CustomersPage() {
                           {c.name ?? "(tanpa nama)"}
                         </button>
                       </td>
-                      <td className="p-3">{c.phone ?? "-"}</td>
-                      <td className="p-3 text-right">{formatCurrency(c.total_spent)}</td>
-                      <td className="p-3 text-right">{c.loyalty_points}</td>
-                      <td className="p-3 text-right">{formatCurrency(c.credit_limit)}</td>
-                      <td className="p-3">
-                        <div className="flex gap-2">
+                      <td className="px-4 py-3 text-muted-foreground">{c.phone ?? "-"}</td>
+                      <td className="px-4 py-3 text-right tabular-nums">{formatCurrency(c.total_spent)}</td>
+                      <td className="px-4 py-3 text-right tabular-nums">{c.loyalty_points}</td>
+                      <td className="px-4 py-3 text-right tabular-nums">{formatCurrency(c.credit_limit)}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex justify-end gap-2">
                           <Button size="sm" variant="outline" onClick={() => router.push(`/customers/${c.id}`)}>
                             Detail
                           </Button>
