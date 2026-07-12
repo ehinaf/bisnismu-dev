@@ -4,15 +4,28 @@
   "private": true,
   "description": "BisnisMu frontend (Next.js)",
   "scripts": {
-    "dev": "echo \"@bisnismu/web: Next.js belum di-scaffold\" && exit 0",
-    "build": "echo \"@bisnismu/web: Next.js belum di-scaffold\" && exit 0",
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
     "test": "echo \"@bisnismu/web: no tests yet\" && exit 0",
     "lint": "echo \"@bisnismu/web: no lint config yet\" && exit 0",
-    "typecheck": "echo \"@bisnismu/web: no tsconfig yet\" && exit 0"
+    "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
     "@bisnismu/sdk": "workspace:*",
     "@bisnismu/types": "workspace:*",
-    "@bisnismu/ui": "workspace:*"
+    "@bisnismu/ui": "workspace:*",
+    "next": "^15.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "autoprefixer": "^10.4.0",
+    "postcss": "^8.4.0",
+    "tailwindcss": "^3.4.0",
+    "typescript": "^5.9.0"
   }
 }
