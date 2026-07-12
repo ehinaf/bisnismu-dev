@@ -8,6 +8,9 @@ import { TenantModule } from "./modules/tenant/tenant.module";
 import { SalesModule } from "./modules/sales/sales.module";
 import { CatalogModule } from "./modules/catalog/catalog.module";
 import { CashdrawerModule } from "./modules/cashdrawer/cashdrawer.module";
+import { InventoryModule } from "./modules/inventory/inventory.module";
+import { ReportModule } from "./modules/report/report.module";
+import { ExpenseModule } from "./modules/expense/expense.module";
 
 @Module({
   imports: [
@@ -19,6 +22,9 @@ import { CashdrawerModule } from "./modules/cashdrawer/cashdrawer.module";
     SalesModule,
     CatalogModule,
     CashdrawerModule,
+    InventoryModule,
+    ReportModule,
+    ExpenseModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })
