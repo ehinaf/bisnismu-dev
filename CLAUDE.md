@@ -1,16 +1,19 @@
 # BisnisMu — POS Universal untuk UMKM Indonesia
 
 ## Konteks
+
 POS web multi-tenant untuk retail/F&B/jasa/grosir.
 Dokumentasi: docs/PRD_bisnismu.md, docs/skema_database_bisnismu_v2.sql
 
 ## Stack
+
 - Backend: NestJS + Prisma + PostgreSQL 16 (modular monolith)
 - Frontend: Next.js 15 + TypeScript + Tailwind
 - Monorepo: pnpm workspaces
 - Deploy: Docker Compose
 
 ## Aturan Wajib
+
 1. UANG: selalu Decimal/NUMERIC — JANGAN PERNAH float/Number
 2. TRANSAKSI PENJUALAN: semua dalam satu prisma.$transaction (atomik)
 3. MULTI-TENANT: setiap query WAJIB filter business_id
@@ -20,12 +23,14 @@ Dokumentasi: docs/PRD_bisnismu.md, docs/skema_database_bisnismu_v2.sql
 7. AUDIT: aksi sensitif (void, refund, ubah harga) tercatat di audit_logs
 
 ## Perintah
-- pnpm dev            # jalankan api + web
-- pnpm test           # unit test
-- pnpm db:migrate     # prisma migration
+
+- pnpm dev # jalankan api + web
+- pnpm test # unit test
+- pnpm db:migrate # prisma migration
 - pnpm lint && pnpm typecheck
 
 ## Workflow
+
 - Plan Mode (Shift+Tab) untuk pekerjaan multi-file
 - Test sebelum selesai: pnpm test && pnpm typecheck
 - Commit message: feat(module), fix(module), docs(module)
@@ -33,6 +38,7 @@ Dokumentasi: docs/PRD_bisnismu.md, docs/skema_database_bisnismu_v2.sql
 ## Fase 0 Workflow (Automatic Execution)
 
 ### Saat prompt: "Start Fase 0 Step 2"
+
 1. Baca docs/BISNISMU_START_HERE.md bagian Fase 0
 2. Execute setiap step secara berurutan:
    - Create folder/file
@@ -44,6 +50,7 @@ Dokumentasi: docs/PRD_bisnismu.md, docs/skema_database_bisnismu_v2.sql
 5. Report progress setiap step
 
 ### Autonomous Execution Checklist
+
 - [ ] Baca requirement docs dulu
 - [ ] Buat plan otomatis (jangan tanya)
 - [ ] Execute step-by-step
@@ -54,6 +61,7 @@ Dokumentasi: docs/PRD_bisnismu.md, docs/skema_database_bisnismu_v2.sql
 ## Fase 0 Workflow (Automatic Execution)
 
 ### Saat prompt: "Start Fase 0 Step 2"
+
 1. Baca docs/BISNISMU_START_HERE.md bagian Fase 0
 2. Execute setiap step secara berurutan:
    - Create folder/file
@@ -65,9 +73,16 @@ Dokumentasi: docs/PRD_bisnismu.md, docs/skema_database_bisnismu_v2.sql
 5. Report progress setiap step
 
 ### Autonomous Execution Checklist
+
 - [ ] Baca requirement docs dulu
 - [ ] Buat plan otomatis (jangan tanya)
 - [ ] Execute step-by-step
 - [ ] Verify output setelah tiap step
 - [ ] Commit ketika milestone selesai
 - [ ] Report status (DONE/BLOCKER/WAITING)
+
+## Model Selection
+- Default: claude-sonnet-4-6 (semua task unless noted)
+- Sales Engine (Fase 1): Sonnet first, Opus if complex reasoning needed
+- Architecture decisions: Opus 4.6
+- Simple fixes: Haiku ok
