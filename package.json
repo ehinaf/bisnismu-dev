@@ -1,0 +1,21 @@
+{
+  "name": "bisnismu",
+  "version": "0.0.1",
+  "description": "Sistem bisnis lengkap untuk UMKM Indonesia",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm -r --parallel run dev",
+    "build": "pnpm -r run build",
+    "test": "pnpm -r run test",
+    "lint": "pnpm -r run lint",
+    "typecheck": "pnpm -r run typecheck",
+    "db:migrate": "pnpm -w --filter @bisnismu/db exec prisma migrate dev",
+    "db:seed": "pnpm -w --filter @bisnismu/db exec prisma db seed",
+    "format": "prettier --write \"**/*.{ts,tsx,md,json}\"",
+    "clean": "rm -rf node_modules .next dist build coverage"
+  },
+  "devDependencies": {
+    "prettier": "^3.0.0",
+    "typescript": "^5.0.0"
+  }
+}
