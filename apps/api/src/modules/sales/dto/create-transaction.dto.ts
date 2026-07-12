@@ -49,6 +49,12 @@ export class CreateTransactionDto {
   @IsString()
   notes?: string;
 
+  // Kode voucher yang dimasukkan kasir/pelanggan (opsional). Diskon otomatis
+  // terjadwal TIDAK perlu disebut di sini — server mengevaluasinya sendiri.
+  @IsOptional()
+  @IsString()
+  voucher_code?: string;
+
   @IsArray()
   @ArrayMinSize(1)
   @ValidateNested({ each: true })

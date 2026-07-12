@@ -26,6 +26,7 @@ interface ResolvedModifier {
 interface ResolvedItem {
   item_id: string;
   variant_id: string | null;
+  category_id: string | null;
   item_type: string;
   track_stock: boolean;
   use_recipe: boolean;
@@ -45,6 +46,21 @@ interface TaxRow {
   tax_name_snapshot: string;
   rate_snapshot: Prisma.Decimal;
   amount: Prisma.Decimal;
+}
+
+// Bentuk minimal baris yang dibutuhkan resolveAutoDiscounts untuk mengevaluasi
+// scope='category'/'specific_items' — dipenuhi baik oleh ResolvedItem (baru
+// dihitung) maupun transaction_items yang sudah tersimpan (dipakai closeBill).
+interface DiscountEligibleLine {
+  item_id: string;
+  category_id: string | null;
+  subtotal: Prisma.Decimal;
+}
+
+interface DiscountRow {
+  discount_id: string;
+  discount_name_snapshot: string;
+  amount_applied: Prisma.Decimal;
 }
 
 @Injectable()
@@ -90,18 +106,37 @@ export class SalesService {
           dto.items,
         );
 
-        // ── 3. Pajak & service charge ──
-        const { taxTotal, serviceChargeTotal, taxRows } = await this.computeTaxes(tx, businessId, subtotal);
+        // ── 3. Diskon otomatis terjadwal + voucher berkode (opsional) ──
+        const eligibleLines: DiscountEligibleLine[] = resolvedItems.map((r) => ({
+          item_id: r.item_id,
+          category_id: r.category_id,
+          subtotal: r.subtotal,
+        }));
+        const { discountTotal: autoDiscountTotal, discountRows } = await this.resolveAutoDiscounts(
+          tx,
+          businessId,
+          subtotal,
+          eligibleLines,
+        );
+        const remainingAfterAuto = subtotal.minus(autoDiscountTotal);
+        const voucherResult = dto.voucher_code
+          ? await this.resolveVoucher(tx, businessId, dto.voucher_code, subtotal, remainingAfterAuto, customer?.id ?? null)
+          : null;
+        const discountTotal = autoDiscountTotal.plus(voucherResult?.amount ?? new Prisma.Decimal(0));
+        const effectiveSubtotal = subtotal.minus(discountTotal);
 
-        // ── 4. Total & pembulatan (diskon belum diimplementasikan — lihat README modul sales) ──
+        // ── 4. Pajak & service charge — dihitung atas subtotal SETELAH diskon ──
+        const { taxTotal, serviceChargeTotal, taxRows } = await this.computeTaxes(tx, businessId, effectiveSubtotal);
+
+        // ── 5. Total & pembulatan ──
         const deliveryFee = dto.delivery_fee ? new Prisma.Decimal(dto.delivery_fee) : new Prisma.Decimal(0);
-        const rawTotal = subtotal.plus(taxTotal).plus(serviceChargeTotal).plus(deliveryFee);
+        const rawTotal = effectiveSubtotal.plus(taxTotal).plus(serviceChargeTotal).plus(deliveryFee);
         const { total, rounding_adjustment } = applyRounding(rawTotal, settings?.rounding ?? "none");
 
-        // ── 5. Nomor struk atomik (document_counters) ──
+        // ── 6. Nomor struk atomik (document_counters) ──
         const transactionNumber = await this.nextTransactionNumber(tx, businessId, dto.outlet_id, outlet.id);
 
-        // ── 6. Insert transactions (amount_paid/change_due diisi finalizePayment di bawah) ──
+        // ── 7. Insert transactions (amount_paid/change_due diisi finalizePayment di bawah) ──
         const transaction = await tx.transaction.create({
           data: {
             business_id: businessId,
@@ -115,6 +150,7 @@ export class SalesService {
             status: "completed",
             guest_count: dto.guest_count,
             subtotal,
+            discount_total: discountTotal,
             tax_total: taxTotal,
             service_charge_total: serviceChargeTotal,
             rounding_adjustment,
@@ -127,19 +163,23 @@ export class SalesService {
           },
         });
 
-        // ── 7. Insert transaction_items (snapshot) ──
+        // ── 8. Insert transaction_items (snapshot) ──
         await this.insertTransactionItems(tx, transaction.id, resolvedItems);
 
-        // ── 8. Insert transaction_taxes (snapshot) ──
+        // ── 9. Insert transaction_taxes & transaction_discounts (snapshot) ──
         await this.insertTransactionTaxes(tx, transaction.id, taxRows);
+        await this.insertTransactionDiscounts(tx, transaction.id, discountRows);
+        if (voucherResult) {
+          await this.applyVoucherRedemption(tx, transaction.id, customer?.id ?? null, voucherResult.voucher_id, voucherResult.amount);
+        }
 
-        // ── 9. Kurangi stok (SELECT ... FOR UPDATE) ──
+        // ── 10. Kurangi stok (SELECT ... FOR UPDATE) ──
         await this.reduceStockForItems(tx, dto.outlet_id, resolvedItems, transaction.id, cashierId);
 
-        // ── 10. Pembayaran, kasbon, poin loyalty ──
+        // ── 11. Pembayaran, kasbon, poin loyalty ──
         await this.finalizePayment(tx, businessId, { id: transaction.id, total }, dto.payments, customer, settings);
 
-        // ── 11. Kembalikan transaksi lengkap ──
+        // ── 12. Kembalikan transaksi lengkap ──
         return tx.transaction.findUniqueOrThrow({
           where: { id: transaction.id },
           include: { items: { include: { modifiers: true } }, payments: true, taxes: true },
@@ -318,9 +358,17 @@ export class SalesService {
     return this.prisma.$transaction(
       async (tx) => {
         const lockedRows = await tx.$queryRaw<
-          Array<{ id: string; status: string; total: Prisma.Decimal | string; customer_id: string | null; dining_table_id: string | null }>
+          Array<{
+            id: string;
+            status: string;
+            subtotal: Prisma.Decimal | string;
+            delivery_fee: Prisma.Decimal | string;
+            total: Prisma.Decimal | string;
+            customer_id: string | null;
+            dining_table_id: string | null;
+          }>
         >`
-          SELECT id, status, total, customer_id, dining_table_id FROM transactions
+          SELECT id, status, subtotal, delivery_fee, total, customer_id, dining_table_id FROM transactions
           WHERE id = ${transactionId} AND business_id = ${businessId}
           FOR UPDATE
         `;
@@ -332,7 +380,54 @@ export class SalesService {
           ? await tx.customer.findFirst({ where: { id: locked.customer_id, business_id: businessId } })
           : null;
         const settings = await tx.businessSetting.findFirst({ where: { business_id: businessId } });
-        const total = new Prisma.Decimal(locked.total);
+
+        // ── Diskon otomatis + voucher (opsional) dievaluasi di titik checkout ini,
+        // atas seluruh item yang sudah terkumpul di bill sampai saat ditutup. ──
+        const subtotal = new Prisma.Decimal(locked.subtotal);
+        const persistedItems = await tx.transactionItem.findMany({
+          where: { transaction_id: transactionId },
+          include: { item: true },
+        });
+        const eligibleLines: DiscountEligibleLine[] = persistedItems.map((ti) => ({
+          item_id: ti.item_id ?? "",
+          category_id: ti.item?.category_id ?? null,
+          subtotal: new Prisma.Decimal(ti.subtotal),
+        }));
+        const { discountTotal: autoDiscountTotal, discountRows } = await this.resolveAutoDiscounts(
+          tx,
+          businessId,
+          subtotal,
+          eligibleLines,
+        );
+        const remainingAfterAuto = subtotal.minus(autoDiscountTotal);
+        const voucherResult = dto.voucher_code
+          ? await this.resolveVoucher(tx, businessId, dto.voucher_code, subtotal, remainingAfterAuto, locked.customer_id)
+          : null;
+        const discountTotal = autoDiscountTotal.plus(voucherResult?.amount ?? new Prisma.Decimal(0));
+        const effectiveSubtotal = subtotal.minus(discountTotal);
+
+        const { taxTotal, serviceChargeTotal, taxRows } = await this.computeTaxes(tx, businessId, effectiveSubtotal);
+        const deliveryFee = new Prisma.Decimal(locked.delivery_fee);
+        const rawTotal = effectiveSubtotal.plus(taxTotal).plus(serviceChargeTotal).plus(deliveryFee);
+        const { total, rounding_adjustment } = applyRounding(rawTotal, settings?.rounding ?? "none");
+
+        await tx.transactionTax.deleteMany({ where: { transaction_id: transactionId } });
+        await this.insertTransactionTaxes(tx, transactionId, taxRows);
+        await this.insertTransactionDiscounts(tx, transactionId, discountRows);
+        if (voucherResult) {
+          await this.applyVoucherRedemption(tx, transactionId, locked.customer_id, voucherResult.voucher_id, voucherResult.amount);
+        }
+
+        await tx.transaction.update({
+          where: { id: transactionId },
+          data: {
+            discount_total: discountTotal,
+            tax_total: taxTotal,
+            service_charge_total: serviceChargeTotal,
+            rounding_adjustment,
+            total,
+          },
+        });
 
         await this.finalizePayment(tx, businessId, { id: transactionId, total }, dto.payments, customer, settings, {
           status: "completed",
@@ -456,6 +551,7 @@ export class SalesService {
       resolvedItems.push({
         item_id: item.id,
         variant_id: variant?.id ?? null,
+        category_id: item.category_id,
         item_type: item.item_type,
         track_stock: item.track_stock,
         use_recipe: item.use_recipe,
@@ -562,6 +658,157 @@ export class SalesService {
       taxRows.push({ tax_id: tax.id, tax_name_snapshot: tax.name, rate_snapshot: tax.rate, amount });
     }
     return { taxTotal, serviceChargeTotal, taxRows };
+  }
+
+  /**
+   * Promo otomatis terjadwal (PRD F-12) — semua diskon aktif milik business
+   * yang sedang berlaku (tanggal + jam + hari) dievaluasi dan ditumpuk
+   * (stacking), masing-masing dipotong dari sisa subtotal secara berurutan
+   * supaya totalnya tidak pernah melebihi subtotal itu sendiri.
+   */
+  private async resolveAutoDiscounts(
+    tx: Prisma.TransactionClient,
+    businessId: string,
+    subtotal: Prisma.Decimal,
+    lines: DiscountEligibleLine[],
+  ): Promise<{ discountTotal: Prisma.Decimal; discountRows: DiscountRow[] }> {
+    const now = new Date();
+    const activeDiscounts = await tx.discount.findMany({
+      where: {
+        business_id: businessId,
+        deleted_at: null,
+        is_active: true,
+        OR: [{ start_date: null }, { start_date: { lte: now } }],
+      },
+    });
+
+    const discountRows: DiscountRow[] = [];
+    let remaining = subtotal;
+
+    for (const discount of activeDiscounts) {
+      if (discount.end_date && discount.end_date < now) continue;
+
+      const conditions = (discount.conditions ?? {}) as Record<string, unknown>;
+
+      if (Array.isArray(conditions.days_of_week) && conditions.days_of_week.length > 0) {
+        if (!conditions.days_of_week.includes(now.getDay())) continue;
+      }
+      const nowHm = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+      if (typeof conditions.hour_start === "string" && nowHm < conditions.hour_start) continue;
+      if (typeof conditions.hour_end === "string" && nowHm > conditions.hour_end) continue;
+
+      let eligibleAmount: Prisma.Decimal;
+      if (discount.scope === "category") {
+        const categoryIds = Array.isArray(conditions.category_ids) ? (conditions.category_ids as string[]) : [];
+        eligibleAmount = lines
+          .filter((l) => l.category_id && categoryIds.includes(l.category_id))
+          .reduce((sum, l) => sum.plus(l.subtotal), new Prisma.Decimal(0));
+      } else if (discount.scope === "specific_items") {
+        const itemIds = Array.isArray(conditions.item_ids) ? (conditions.item_ids as string[]) : [];
+        eligibleAmount = lines
+          .filter((l) => itemIds.includes(l.item_id))
+          .reduce((sum, l) => sum.plus(l.subtotal), new Prisma.Decimal(0));
+      } else if (discount.scope === "min_purchase") {
+        const minAmount = typeof conditions.min_amount === "number" ? conditions.min_amount : 0;
+        eligibleAmount = subtotal.greaterThanOrEqualTo(minAmount) ? subtotal : new Prisma.Decimal(0);
+      } else {
+        eligibleAmount = subtotal; // all_items
+      }
+
+      eligibleAmount = Prisma.Decimal.min(eligibleAmount, remaining);
+      if (eligibleAmount.lessThanOrEqualTo(0)) continue;
+
+      let amount =
+        discount.discount_type === "percentage"
+          ? eligibleAmount.times(discount.value).dividedBy(100)
+          : Prisma.Decimal.min(discount.value, eligibleAmount);
+      amount = Prisma.Decimal.min(amount, remaining);
+      if (amount.lessThanOrEqualTo(0)) continue;
+
+      discountRows.push({ discount_id: discount.id, discount_name_snapshot: discount.name, amount_applied: amount });
+      remaining = remaining.minus(amount);
+      if (remaining.lessThanOrEqualTo(0)) break;
+    }
+
+    const discountTotal = discountRows.reduce((sum, r) => sum.plus(r.amount_applied), new Prisma.Decimal(0));
+    return { discountTotal, discountRows };
+  }
+
+  /**
+   * Voucher berkode unik (PRD F-12) — beda dari diskon otomatis, harus
+   * dimasukkan manual oleh kasir/pelanggan. Diterapkan atas sisa subtotal
+   * SETELAH diskon otomatis (stacking berurutan, bukan dari subtotal mentah).
+   */
+  private async resolveVoucher(
+    tx: Prisma.TransactionClient,
+    businessId: string,
+    rawCode: string,
+    rawSubtotal: Prisma.Decimal,
+    remainingSubtotal: Prisma.Decimal,
+    customerId: string | null,
+  ): Promise<{ voucher_id: string; amount: Prisma.Decimal }> {
+    const code = rawCode.trim().toUpperCase();
+    const voucher = await tx.voucher.findUnique({ where: { business_id_code: { business_id: businessId, code } } });
+    if (!voucher) throw new NotFoundException(`Voucher "${code}" tidak ditemukan`);
+
+    const now = new Date();
+    if (!voucher.is_active) throw new BadRequestException(`Voucher "${code}" tidak aktif`);
+    if (voucher.start_date && voucher.start_date > now) throw new BadRequestException(`Voucher "${code}" belum berlaku`);
+    if (voucher.end_date && voucher.end_date < now) throw new BadRequestException(`Voucher "${code}" sudah kedaluwarsa`);
+    if (voucher.usage_limit !== null && voucher.usage_count >= voucher.usage_limit) {
+      throw new BadRequestException(`Voucher "${code}" sudah mencapai batas pemakaian`);
+    }
+    if (rawSubtotal.lessThan(voucher.min_purchase)) {
+      throw new BadRequestException(`Voucher "${code}" memerlukan minimal belanja ${voucher.min_purchase.toFixed(2)}`);
+    }
+    if (customerId && voucher.per_customer_limit > 0) {
+      const usedByCustomer = await tx.voucherRedemption.count({
+        where: { voucher_id: voucher.id, customer_id: customerId },
+      });
+      if (usedByCustomer >= voucher.per_customer_limit) {
+        throw new BadRequestException(`Voucher "${code}" sudah dipakai maksimal oleh pelanggan ini`);
+      }
+    }
+    if (remainingSubtotal.lessThanOrEqualTo(0)) {
+      throw new BadRequestException(`Tidak ada sisa subtotal untuk diterapkan voucher "${code}"`);
+    }
+
+    let amount =
+      voucher.discount_type === "percentage"
+        ? remainingSubtotal.times(voucher.value).dividedBy(100)
+        : new Prisma.Decimal(voucher.value);
+    if (voucher.discount_type === "percentage" && voucher.max_discount) {
+      amount = Prisma.Decimal.min(amount, voucher.max_discount);
+    }
+    amount = Prisma.Decimal.min(amount, remainingSubtotal);
+
+    return { voucher_id: voucher.id, amount };
+  }
+
+  private async insertTransactionDiscounts(tx: Prisma.TransactionClient, transactionId: string, rows: DiscountRow[]) {
+    for (const r of rows) {
+      await tx.transactionDiscount.create({
+        data: {
+          transaction_id: transactionId,
+          discount_id: r.discount_id,
+          discount_name_snapshot: r.discount_name_snapshot,
+          amount_applied: r.amount_applied,
+        },
+      });
+    }
+  }
+
+  private async applyVoucherRedemption(
+    tx: Prisma.TransactionClient,
+    transactionId: string,
+    customerId: string | null,
+    voucherId: string,
+    amount: Prisma.Decimal,
+  ) {
+    await tx.voucherRedemption.create({
+      data: { voucher_id: voucherId, transaction_id: transactionId, customer_id: customerId, amount_applied: amount },
+    });
+    await tx.voucher.update({ where: { id: voucherId }, data: { usage_count: { increment: 1 } } });
   }
 
   private async insertTransactionItems(tx: Prisma.TransactionClient, transactionId: string, items: ResolvedItem[]) {

@@ -68,11 +68,16 @@ function buildMockTx(overrides: Record<string, unknown> = {}) {
     },
     transactionItem: {
       create: jest.fn().mockImplementation(({ data }) => Promise.resolve({ id: "txn-item-1", ...data })),
+      findMany: jest.fn().mockResolvedValue([]),
     },
     transactionItemModifier: { create: jest.fn().mockResolvedValue({}) },
     transactionTax: { create: jest.fn().mockResolvedValue({}), deleteMany: jest.fn().mockResolvedValue({}) },
+    transactionDiscount: { create: jest.fn().mockResolvedValue({}) },
     itemModifierGroup: { findMany: jest.fn().mockResolvedValue([]) },
     modifier: { findMany: jest.fn().mockResolvedValue([]) },
+    discount: { findMany: jest.fn().mockResolvedValue([]) },
+    voucher: { findUnique: jest.fn().mockResolvedValue(null), update: jest.fn().mockResolvedValue({}) },
+    voucherRedemption: { count: jest.fn().mockResolvedValue(0), create: jest.fn().mockResolvedValue({}) },
     bundleComponent: { findMany: jest.fn().mockResolvedValue([]) },
     recipe: { findMany: jest.fn().mockResolvedValue([]) },
     inventory: { update: jest.fn().mockResolvedValue({}) },
@@ -431,6 +436,198 @@ describe("SalesService", () => {
     });
   });
 
+  describe("diskon otomatis & voucher", () => {
+    it("diskon all_items percentage memotong subtotal, pajak dihitung dari subtotal SETELAH diskon", async () => {
+      const mockTx = buildMockTx({
+        discount: {
+          findMany: jest.fn().mockResolvedValue([
+            { id: "disc-1", name: "Promo 10%", discount_type: "percentage", value: new Prisma.Decimal(10), scope: "all_items", conditions: {}, end_date: null },
+          ]),
+        },
+        tax: {
+          findMany: jest.fn().mockResolvedValue([
+            { id: "tax-1", name: "PPN 10%", rate: new Prisma.Decimal(10), tax_kind: "tax" },
+          ]),
+        },
+      });
+      const dto: CreateTransactionDto = {
+        outlet_id: "outlet-1",
+        items: [{ item_id: "item-1", quantity: 1 }],
+        payments: [{ payment_channel_id: "channel-1", amount: 19800 }],
+      };
+      await run(dto, mockTx);
+      const createArgs = mockTx.transaction.create.mock.calls[0][0].data;
+      expect(createArgs.subtotal.toNumber()).toBe(20000);
+      expect(createArgs.discount_total.toNumber()).toBe(2000); // 10% x 20000
+      expect(createArgs.tax_total.toNumber()).toBe(1800); // 10% x (20000-2000), bukan 10% x 20000
+      expect(createArgs.total.toNumber()).toBe(19800);
+      expect(mockTx.transactionDiscount.create).toHaveBeenCalledWith({
+        data: { transaction_id: "txn-1", discount_id: "disc-1", discount_name_snapshot: "Promo 10%", amount_applied: expect.objectContaining({}) },
+      });
+    });
+
+    it("diskon scope specific_items tidak berlaku untuk item di luar daftar", async () => {
+      const mockTx = buildMockTx({
+        discount: {
+          findMany: jest.fn().mockResolvedValue([
+            { id: "disc-1", name: "Promo Item Lain", discount_type: "percentage", value: new Prisma.Decimal(50), scope: "specific_items", conditions: { item_ids: ["item-lain"] }, end_date: null },
+          ]),
+        },
+      });
+      const dto: CreateTransactionDto = {
+        outlet_id: "outlet-1",
+        items: [{ item_id: "item-1", quantity: 1 }],
+        payments: [{ payment_channel_id: "channel-1", amount: 20000 }],
+      };
+      await run(dto, mockTx);
+      const createArgs = mockTx.transaction.create.mock.calls[0][0].data;
+      expect(createArgs.discount_total.toNumber()).toBe(0);
+      expect(createArgs.subtotal.toNumber()).toBe(20000);
+      expect(createArgs.total.toNumber()).toBe(20000);
+    });
+
+    it("diskon di luar jendela hari tidak diterapkan", async () => {
+      const otherDay = (new Date().getDay() + 1) % 7;
+      const mockTx = buildMockTx({
+        discount: {
+          findMany: jest.fn().mockResolvedValue([
+            { id: "disc-1", name: "Promo Hari Lain", discount_type: "percentage", value: new Prisma.Decimal(10), scope: "all_items", conditions: { days_of_week: [otherDay] }, end_date: null },
+          ]),
+        },
+      });
+      const dto: CreateTransactionDto = {
+        outlet_id: "outlet-1",
+        items: [{ item_id: "item-1", quantity: 1 }],
+        payments: [{ payment_channel_id: "channel-1", amount: 20000 }],
+      };
+      await run(dto, mockTx);
+      const createArgs = mockTx.transaction.create.mock.calls[0][0].data;
+      expect(createArgs.discount_total.toNumber()).toBe(0);
+    });
+
+    it("diskon fixed_amount dibatasi tidak melebihi subtotal", async () => {
+      const mockTx = buildMockTx({
+        discount: {
+          findMany: jest.fn().mockResolvedValue([
+            { id: "disc-1", name: "Potongan Besar", discount_type: "fixed_amount", value: new Prisma.Decimal(50000), scope: "all_items", conditions: {}, end_date: null },
+          ]),
+        },
+      });
+      const dto: CreateTransactionDto = {
+        outlet_id: "outlet-1",
+        items: [{ item_id: "item-1", quantity: 1 }],
+        payments: [{ payment_channel_id: "channel-1", amount: 1 }],
+      };
+      await run(dto, mockTx);
+      const createArgs = mockTx.transaction.create.mock.calls[0][0].data;
+      expect(createArgs.discount_total.toNumber()).toBe(20000); // dibatasi, bukan 50000
+      expect(createArgs.total.toNumber()).toBe(0);
+    });
+
+    it("menolak voucher dengan kode yang tidak ditemukan", async () => {
+      const mockTx = buildMockTx({ voucher: { findUnique: jest.fn().mockResolvedValue(null), update: jest.fn() } });
+      const dto: CreateTransactionDto = {
+        outlet_id: "outlet-1",
+        voucher_code: "TIDAKADA",
+        items: [{ item_id: "item-1", quantity: 1 }],
+        payments: [{ payment_channel_id: "channel-1", amount: 20000 }],
+      };
+      await expect(run(dto, mockTx)).rejects.toThrow(NotFoundException);
+    });
+
+    it("menolak voucher yang sudah mencapai batas pemakaian", async () => {
+      const mockTx = buildMockTx({
+        voucher: {
+          findUnique: jest.fn().mockResolvedValue({
+            id: "v-1", is_active: true, start_date: null, end_date: null, usage_limit: 5, usage_count: 5,
+            min_purchase: new Prisma.Decimal(0), per_customer_limit: 1, discount_type: "fixed_amount", value: new Prisma.Decimal(5000), max_discount: null,
+          }),
+          update: jest.fn(),
+        },
+      });
+      const dto: CreateTransactionDto = {
+        outlet_id: "outlet-1",
+        voucher_code: "HABIS",
+        items: [{ item_id: "item-1", quantity: 1 }],
+        payments: [{ payment_channel_id: "channel-1", amount: 20000 }],
+      };
+      await expect(run(dto, mockTx)).rejects.toThrow(BadRequestException);
+    });
+
+    it("menolak voucher jika subtotal belum mencapai min_purchase", async () => {
+      const mockTx = buildMockTx({
+        voucher: {
+          findUnique: jest.fn().mockResolvedValue({
+            id: "v-1", is_active: true, start_date: null, end_date: null, usage_limit: null, usage_count: 0,
+            min_purchase: new Prisma.Decimal(50000), per_customer_limit: 1, discount_type: "fixed_amount", value: new Prisma.Decimal(5000), max_discount: null,
+          }),
+          update: jest.fn(),
+        },
+      });
+      const dto: CreateTransactionDto = {
+        outlet_id: "outlet-1",
+        voucher_code: "MINBELANJA",
+        items: [{ item_id: "item-1", quantity: 1 }],
+        payments: [{ payment_channel_id: "channel-1", amount: 20000 }],
+      };
+      await expect(run(dto, mockTx)).rejects.toThrow(BadRequestException);
+    });
+
+    it("voucher percentage dibatasi oleh max_discount", async () => {
+      const mockTx = buildMockTx({
+        voucher: {
+          findUnique: jest.fn().mockResolvedValue({
+            id: "v-1", is_active: true, start_date: null, end_date: null, usage_limit: null, usage_count: 0,
+            min_purchase: new Prisma.Decimal(0), per_customer_limit: 1, discount_type: "percentage", value: new Prisma.Decimal(50), max_discount: new Prisma.Decimal(3000),
+          }),
+          update: jest.fn().mockResolvedValue({}),
+        },
+      });
+      const dto: CreateTransactionDto = {
+        outlet_id: "outlet-1",
+        voucher_code: "hemat50",
+        items: [{ item_id: "item-1", quantity: 1 }],
+        payments: [{ payment_channel_id: "channel-1", amount: 17000 }],
+      };
+      await run(dto, mockTx);
+      const createArgs = mockTx.transaction.create.mock.calls[0][0].data;
+      expect(createArgs.discount_total.toNumber()).toBe(3000); // 50% x 20000 = 10000, dibatasi max_discount 3000
+      expect(mockTx.voucher.update).toHaveBeenCalledWith({
+        where: { id: "v-1" },
+        data: { usage_count: { increment: 1 } },
+      });
+      expect(mockTx.voucherRedemption.create).toHaveBeenCalled();
+    });
+
+    it("diskon otomatis dan voucher ditumpuk berurutan (voucher dari sisa setelah diskon otomatis)", async () => {
+      const mockTx = buildMockTx({
+        discount: {
+          findMany: jest.fn().mockResolvedValue([
+            { id: "disc-1", name: "Promo 10%", discount_type: "percentage", value: new Prisma.Decimal(10), scope: "all_items", conditions: {}, end_date: null },
+          ]),
+        },
+        voucher: {
+          findUnique: jest.fn().mockResolvedValue({
+            id: "v-1", is_active: true, start_date: null, end_date: null, usage_limit: null, usage_count: 0,
+            min_purchase: new Prisma.Decimal(0), per_customer_limit: 1, discount_type: "fixed_amount", value: new Prisma.Decimal(5000), max_discount: null,
+          }),
+          update: jest.fn().mockResolvedValue({}),
+        },
+      });
+      const dto: CreateTransactionDto = {
+        outlet_id: "outlet-1",
+        voucher_code: "TUMPUK",
+        items: [{ item_id: "item-1", quantity: 1 }],
+        payments: [{ payment_channel_id: "channel-1", amount: 13000 }],
+      };
+      await run(dto, mockTx);
+      const createArgs = mockTx.transaction.create.mock.calls[0][0].data;
+      // 20000 - 2000 (diskon 10%) - 5000 (voucher fixed) = 13000
+      expect(createArgs.discount_total.toNumber()).toBe(7000);
+      expect(createArgs.total.toNumber()).toBe(13000);
+    });
+  });
+
   describe("openBill", () => {
     async function runOpen(dto: Parameters<SalesService["openBill"]>[2], mockTx: ReturnType<typeof buildMockTx>) {
       prisma.$transaction.mockImplementation((fn: any) => fn(mockTx));
@@ -559,9 +756,9 @@ describe("SalesService", () => {
 
     it("menolak jika bill sudah tidak berstatus open", async () => {
       const mockTx = buildMockTx({
-        $queryRaw: jest
-          .fn()
-          .mockResolvedValue([{ id: "txn-1", status: "completed", total: new Prisma.Decimal(20000), customer_id: null, dining_table_id: null }]),
+        $queryRaw: jest.fn().mockResolvedValue([
+          { id: "txn-1", status: "completed", subtotal: new Prisma.Decimal(20000), delivery_fee: new Prisma.Decimal(0), total: new Prisma.Decimal(20000), customer_id: null, dining_table_id: null },
+        ]),
       });
       await expect(
         runClose("txn-1", { payments: [{ payment_channel_id: "channel-1", amount: 20000 }] }, mockTx),
@@ -570,9 +767,9 @@ describe("SalesService", () => {
 
     it("menolak jika pembayaran kurang dari total bill", async () => {
       const mockTx = buildMockTx({
-        $queryRaw: jest
-          .fn()
-          .mockResolvedValue([{ id: "txn-1", status: "open", total: new Prisma.Decimal(20000), customer_id: null, dining_table_id: null }]),
+        $queryRaw: jest.fn().mockResolvedValue([
+          { id: "txn-1", status: "open", subtotal: new Prisma.Decimal(20000), delivery_fee: new Prisma.Decimal(0), total: new Prisma.Decimal(20000), customer_id: null, dining_table_id: null },
+        ]),
       });
       await expect(
         runClose("txn-1", { payments: [{ payment_channel_id: "channel-1", amount: 5000 }] }, mockTx),
@@ -581,16 +778,17 @@ describe("SalesService", () => {
 
     it("menutup bill (status completed) dan membebaskan meja", async () => {
       const mockTx = buildMockTx({
-        $queryRaw: jest
-          .fn()
-          .mockResolvedValue([
-            { id: "txn-1", status: "open", total: new Prisma.Decimal(20000), customer_id: null, dining_table_id: "table-1" },
-          ]),
+        $queryRaw: jest.fn().mockResolvedValue([
+          { id: "txn-1", status: "open", subtotal: new Prisma.Decimal(20000), delivery_fee: new Prisma.Decimal(0), total: new Prisma.Decimal(20000), customer_id: null, dining_table_id: "table-1" },
+        ]),
       });
 
       await runClose("txn-1", { payments: [{ payment_channel_id: "channel-1", amount: 20000 }] }, mockTx);
 
-      const updateArgs = mockTx.transaction.update.mock.calls[0][0].data;
+      // Panggilan update terakhir adalah dari finalizePayment (status/amount_paid);
+      // panggilan sebelumnya adalah update diskon/pajak/total oleh closeBill sendiri.
+      const lastUpdateCall = mockTx.transaction.update.mock.calls[mockTx.transaction.update.mock.calls.length - 1];
+      const updateArgs = lastUpdateCall[0].data;
       expect(updateArgs.status).toBe("completed");
       expect(updateArgs.amount_paid.toNumber()).toBe(20000);
       expect(mockTx.diningTable.update).toHaveBeenCalledWith({

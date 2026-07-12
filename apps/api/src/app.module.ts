@@ -12,6 +12,7 @@ import { InventoryModule } from "./modules/inventory/inventory.module";
 import { ReportModule } from "./modules/report/report.module";
 import { ExpenseModule } from "./modules/expense/expense.module";
 import { CustomerModule } from "./modules/customer/customer.module";
+import { PromotionModule } from "./modules/promotion/promotion.module";
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { CustomerModule } from "./modules/customer/customer.module";
     ReportModule,
     ExpenseModule,
     CustomerModule,
+    PromotionModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })
