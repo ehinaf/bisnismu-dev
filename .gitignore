@@ -1,6 +1,6 @@
 # Dependencies
 node_modules/
-pnpm-lock.yaml
+# pnpm-lock.yaml HARUS masuk git - dibutuhkan CI untuk install --frozen-lockfile
 package-lock.json
 yarn.lock
 
