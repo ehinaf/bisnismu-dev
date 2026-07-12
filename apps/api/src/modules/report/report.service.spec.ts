@@ -125,5 +125,19 @@ describe("ReportService", () => {
         expect.objectContaining({ take: 5, orderBy: { _sum: { subtotal: "desc" } } }),
       );
     });
+
+    it("`to` mencakup SELURUH hari itu untuk kolom TIMESTAMPTZ (created_at), bukan cuma sampai tengah malam", async () => {
+      prisma.transactionItem.groupBy.mockResolvedValue([]);
+
+      await service.topItems("biz-1", { outlet_id: "outlet-1", from: "2026-07-01", to: "2026-07-12" });
+
+      const callArgs = prisma.transactionItem.groupBy.mock.calls[0][0];
+      const createdAtFilter = callArgs.where.transaction.created_at;
+      // Transaksi jam 23:00 tanggal 12 Juli harus TETAP masuk — batas atas
+      // harus berupa `lt` awal tanggal 13, bukan `lte` tengah malam tanggal 12.
+      const lateOnLastDay = new Date("2026-07-12T23:00:00.000Z");
+      expect(lateOnLastDay < createdAtFilter.lt).toBe(true);
+      expect(createdAtFilter.lte).toBeUndefined();
+    });
   });
 });

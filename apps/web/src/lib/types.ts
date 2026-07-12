@@ -49,3 +49,35 @@ export interface TransactionDetail {
   items: TransactionItemDetail[];
   payments: PaymentDetail[];
 }
+
+export interface DailySalesRow {
+  sales_date: string;
+  transaction_count: number;
+  gross_sales: string;
+  total_discounts: string;
+  total_taxes: string;
+  gross_profit: string;
+}
+
+export interface TopItemRow {
+  item_id: string | null;
+  item_name: string;
+  total_qty: string;
+  total_revenue: string;
+}
+
+export interface PaymentMethodRow {
+  channel_name: string;
+  transaction_count: number;
+  total_amount: string;
+}
+
+export interface ProfitLossSummary {
+  transaction_count: number;
+  gross_sales: string;
+  total_discounts: string;
+  total_taxes: string;
+  gross_profit: string;
+  total_expenses: string;
+  net_profit: string;
+}

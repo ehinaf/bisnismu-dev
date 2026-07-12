@@ -13,11 +13,17 @@ export class ReportService {
     if (!outlet) throw new NotFoundException("Outlet tidak ditemukan");
   }
 
+  // `to` dipakai baik untuk kolom DATE (sales_date/expense_date) maupun
+  // TIMESTAMPTZ (created_at). Pakai `lt` batas awal hari BERIKUTNYA (bukan
+  // `lte` ke tengah malam `to`) supaya konsisten inklusif untuk seluruh hari
+  // "to" di kedua tipe kolom — `lte` tengah malam akan memotong transaksi
+  // TIMESTAMPTZ yang terjadi setelah jam 00:00 pada hari itu.
   private dateRange(from?: string, to?: string) {
     if (!from && !to) return undefined;
+    const exclusiveUpperBound = to ? new Date(new Date(to).getTime() + 24 * 60 * 60 * 1000) : undefined;
     return {
       ...(from ? { gte: new Date(from) } : {}),
-      ...(to ? { lte: new Date(to) } : {}),
+      ...(exclusiveUpperBound ? { lt: exclusiveUpperBound } : {}),
     };
   }
 
