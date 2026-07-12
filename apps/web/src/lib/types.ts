@@ -49,6 +49,28 @@ export interface Outlet {
   name: string;
 }
 
+export type TableStatus = "available" | "occupied" | "reserved" | "inactive";
+
+export interface DiningTable {
+  id: string;
+  outlet_id: string;
+  name: string;
+  area: string | null;
+  capacity: number | null;
+  status: TableStatus;
+}
+
+export interface OpenBillTransaction {
+  id: string;
+  transaction_number: string;
+  dining_table_id: string | null;
+  status: string;
+  guest_count: number | null;
+  subtotal: string;
+  total: string;
+  items: TransactionItemDetail[];
+}
+
 export interface PaymentChannel {
   id: string;
   name: string;

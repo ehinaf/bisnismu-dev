@@ -15,7 +15,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [ready, setReady] = useState(false);
   const [userName, setUserName] = useState<string | null>(null);
-  const [canManage, setCanViewReports] = useState(false);
+  const [canManage, setCanManage] = useState(false);
 
   useEffect(() => {
     if (!getToken()) {
@@ -24,7 +24,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     }
     const user = getUser();
     setUserName(user?.name ?? null);
-    setCanViewReports(!!user && MANAGEMENT_ROLES.includes(user.role));
+    setCanManage(!!user && MANAGEMENT_ROLES.includes(user.role));
     setReady(true);
   }, [router]);
 
@@ -41,6 +41,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           <nav className="flex items-center gap-1">
             <NavLink href="/dashboard" active={pathname === "/dashboard"}>
               Kasir
+            </NavLink>
+            <NavLink href="/tables" active={pathname.startsWith("/tables")}>
+              Meja
             </NavLink>
             {canManage && (
               <NavLink href="/catalog" active={pathname === "/catalog"}>
