@@ -143,6 +143,14 @@ async function main() {
     })),
   });
 
+  await prisma.paymentChannel.createMany({
+    data: [
+      { business_id: business.id, name: "Tunai", channel_type: "cash", sort_order: 1 },
+      { business_id: business.id, name: "QRIS", channel_type: "qris", fee_percentage: 0.7, sort_order: 2 },
+      { business_id: business.id, name: "Transfer Bank", channel_type: "bank_transfer", sort_order: 3 },
+    ],
+  });
+
   console.log("Seed selesai:");
   console.log(`  Business : ${business.name} (${business.id})`);
   console.log(`  Outlet   : ${outlet.name} (${outlet.id})`);

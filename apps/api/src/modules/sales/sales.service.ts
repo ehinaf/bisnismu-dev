@@ -348,6 +348,15 @@ export class SalesService {
     );
   }
 
+  async getTransactionById(businessId: string, id: string) {
+    const transaction = await this.prisma.transaction.findFirst({
+      where: { id, business_id: businessId },
+      include: { items: true, payments: true, taxes: true },
+    });
+    if (!transaction) throw new NotFoundException("Transaksi tidak ditemukan");
+    return transaction;
+  }
+
   /**
    * Kurangi stok sesuai tipe item, mengunci baris inventory dengan
    * SELECT ... FOR UPDATE agar aman dari race condition pembelian bersamaan.

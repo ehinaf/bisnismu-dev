@@ -6,6 +6,7 @@ import { PrismaModule } from "./prisma/prisma.module";
 import { AuthModule } from "./modules/auth/auth.module";
 import { TenantModule } from "./modules/tenant/tenant.module";
 import { SalesModule } from "./modules/sales/sales.module";
+import { CatalogModule } from "./modules/catalog/catalog.module";
 
 @Module({
   imports: [
@@ -15,6 +16,7 @@ import { SalesModule } from "./modules/sales/sales.module";
     AuthModule,
     TenantModule,
     SalesModule,
+    CatalogModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })

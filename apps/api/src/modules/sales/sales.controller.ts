@@ -1,4 +1,4 @@
-import { Body, Controller, HttpCode, HttpStatus, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import type { JwtPayload } from "../../common/interfaces/jwt-payload.interface";
@@ -19,5 +19,10 @@ export class SalesController {
       transaction,
       receipt_url: `${receiptBaseUrl}/${transaction.id}`,
     };
+  }
+
+  @Get(":id")
+  getOne(@CurrentUser() user: JwtPayload, @Param("id") id: string) {
+    return this.salesService.getTransactionById(user.business_id, id);
   }
 }
