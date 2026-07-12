@@ -16,7 +16,7 @@ build/
 .next/
 
 # Database
-prisma/migrations/
+# prisma/migrations/ HARUS masuk git (CLAUDE.md: migrasi hanya via Prisma Migrate, wajib di-track)
 .prisma/
 
 # IDE

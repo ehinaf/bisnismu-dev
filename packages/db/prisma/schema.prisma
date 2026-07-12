@@ -1,0 +1,1433 @@
+// Prisma schema BisnisMu — dikonversi dari docs/skema_database_bisnismu_v2.sql
+// Sumber kebenaran desain tetap docs/skema_database_bisnismu_v2.sql — baca dulu
+// sebelum mengubah skema (lihat .claude/skills/db-migration.md).
+//
+// Catatan konversi:
+// - UUID PK/FK memakai default Prisma-level `uuid()`, bukan uuid_generate_v4() DB-level.
+// - Semua nilai uang/kuantitas memakai Decimal (CLAUDE.md aturan #1 — JANGAN PERNAH Float).
+// - Kolom `updated_at` memakai @updatedAt (auto-update di level Prisma Client).
+// - Partial index (idx_transactions_status), 3 CHECK constraint, dan generated column
+//   (stock_opname_items.difference) TIDAK bisa ditulis di DSL ini — ditambahkan manual
+//   di file migrasi SQL (lihat prisma/migrations/*/migration.sql).
+// - 4 view laporan (v_daily_sales, dst) dibuat via raw SQL migration terpisah,
+//   diekspos di sini sebagai `view` block (previewFeature "views") untuk query type-safe.
+
+generator client {
+  provider        = "prisma-client"
+  output          = "../generated/prisma"
+  previewFeatures = ["views"]
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// =====================================================================
+// 1. BUSINESS, SETTINGS, USERS (Multi-tenant + RBAC)
+// =====================================================================
+
+model Business {
+  id            String    @id @default(uuid()) @db.Uuid
+  name          String    @db.VarChar(150)
+  business_type String?   @db.VarChar(50) // retail, fnb, jasa, grosir, campuran
+  email         String?   @db.VarChar(150)
+  phone         String?   @db.VarChar(30)
+  address       String?
+  currency      String    @default("IDR") @db.VarChar(10)
+  timezone      String    @default("Asia/Jakarta") @db.VarChar(50)
+  is_active     Boolean   @default(true)
+  created_at    DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime  @updatedAt @db.Timestamptz(6)
+  deleted_at    DateTime? @db.Timestamptz(6)
+
+  settings             BusinessSetting?
+  users                User[]
+  outlets              Outlet[]
+  categories           Category[]
+  units                Unit[]
+  items                Item[]
+  modifier_groups      ModifierGroup[]
+  stock_transfers      StockTransfer[]
+  suppliers            Supplier[]
+  purchase_orders      PurchaseOrder[]
+  customers            Customer[]
+  loyalty_program      LoyaltyProgram?
+  customer_receivables CustomerReceivable[]
+  taxes                Tax[]
+  discounts            Discount[]
+  vouchers             Voucher[]
+  payment_channels     PaymentChannel[]
+  expense_categories   ExpenseCategory[]
+  expenses             Expense[]
+  bookings             Booking[]
+  transactions         Transaction[]
+  commission_entries   CommissionEntry[]
+  audit_logs           AuditLog[]
+  document_counters    DocumentCounter[]
+
+  @@map("businesses")
+}
+
+enum rounding_mode {
+  none
+  nearest_100
+  nearest_500
+  nearest_1000
+  up_100
+  up_500
+}
+
+model BusinessSetting {
+  business_id          String        @id @db.Uuid
+  receipt_header       String?
+  receipt_footer       String?
+  logo_url             String?
+  default_tax_id       String?       @db.Uuid
+  rounding             rounding_mode @default(none)
+  low_stock_alert      Boolean       @default(true)
+  enable_tables        Boolean       @default(false) // fitur meja (F&B) bisa on/off
+  enable_bookings      Boolean       @default(false) // fitur booking (jasa) bisa on/off
+  enable_kasbon        Boolean       @default(false) // fitur piutang pelanggan bisa on/off
+  enable_loyalty       Boolean       @default(false)
+  enable_commission    Boolean       @default(false) // komisi karyawan (salon dsb)
+  receipt_via_whatsapp Boolean       @default(true)
+  updated_at           DateTime      @updatedAt @db.Timestamptz(6)
+
+  business    Business @relation(fields: [business_id], references: [id], onDelete: Cascade)
+  default_tax Tax?     @relation(fields: [default_tax_id], references: [id])
+
+  @@map("business_settings")
+}
+
+enum user_role {
+  owner
+  admin
+  manager
+  cashier
+  staff
+}
+
+model User {
+  id            String    @id @default(uuid()) @db.Uuid
+  business_id   String    @db.Uuid
+  name          String    @db.VarChar(150)
+  email         String?   @db.VarChar(150)
+  phone         String?   @db.VarChar(30)
+  password_hash String
+  role          user_role @default(cashier)
+  pin_code      String?   @db.VarChar(255) // login cepat kasir (hashed)
+  is_active     Boolean   @default(true)
+  last_login_at DateTime? @db.Timestamptz(6)
+  created_at    DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime  @updatedAt @db.Timestamptz(6)
+  deleted_at    DateTime? @db.Timestamptz(6)
+
+  business    Business         @relation(fields: [business_id], references: [id], onDelete: Cascade)
+  permissions UserPermission[]
+  outlets     UserOutlet[]
+
+  stock_movements_created       StockMovement[]      @relation("StockMovementCreatedBy")
+  stock_transfers_created       StockTransfer[]      @relation("StockTransferCreatedBy")
+  stock_opnames_created         StockOpname[]        @relation("StockOpnameCreatedBy")
+  purchase_orders_created       PurchaseOrder[]      @relation("PurchaseOrderCreatedBy")
+  receivable_payments           ReceivablePayment[]  @relation("ReceivablePaymentReceivedBy")
+  cash_drawer_sessions_opened   CashDrawerSession[]  @relation("CashDrawerSessionOpenedBy")
+  cash_drawer_sessions_closed   CashDrawerSession[]  @relation("CashDrawerSessionClosedBy")
+  cash_drawer_movements_created CashDrawerMovement[] @relation("CashDrawerMovementCreatedBy")
+  expenses_created               Expense[]           @relation("ExpenseCreatedBy")
+  shifts                         Shift[]
+  bookings_assigned              Booking[]           @relation("BookingAssignedTo")
+  transactions_cashiered         Transaction[]       @relation("TransactionCashier")
+  transactions_voided            Transaction[]       @relation("TransactionVoidedBy")
+  transaction_items_served       TransactionItem[]   @relation("TransactionItemServedBy")
+  commission_entries             CommissionEntry[]
+  audit_logs                     AuditLog[]
+
+  @@unique([business_id, email])
+  @@index([business_id])
+  @@map("users")
+}
+
+// Izin granular per user (melengkapi role dasar).
+// Contoh permission_key: 'void_transaction', 'give_discount', 'view_reports',
+// 'manage_items', 'manage_stock', 'open_drawer_without_sale'
+model UserPermission {
+  user_id        String @db.Uuid
+  permission_key String @db.VarChar(60)
+
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@id([user_id, permission_key])
+  @@map("user_permissions")
+}
+
+// =====================================================================
+// 2. OUTLETS, PERANGKAT, MEJA (F&B)
+// =====================================================================
+
+model Outlet {
+  id          String    @id @default(uuid()) @db.Uuid
+  business_id String    @db.Uuid
+  name        String    @db.VarChar(150)
+  address     String?
+  phone       String?   @db.VarChar(30)
+  is_active   Boolean   @default(true)
+  created_at  DateTime  @default(now()) @db.Timestamptz(6)
+  deleted_at  DateTime? @db.Timestamptz(6)
+
+  business Business @relation(fields: [business_id], references: [id], onDelete: Cascade)
+
+  user_outlets         UserOutlet[]
+  devices              Device[]
+  dining_tables        DiningTable[]
+  outlet_item_prices   OutletItemPrice[]
+  outlet_items         OutletItem[]
+  inventory            Inventory[]
+  stock_transfers_from StockTransfer[] @relation("StockTransferFromOutlet")
+  stock_transfers_to   StockTransfer[] @relation("StockTransferToOutlet")
+  stock_opnames        StockOpname[]
+  purchase_orders      PurchaseOrder[]
+  cash_drawer_sessions CashDrawerSession[]
+  expenses             Expense[]
+  shifts               Shift[]
+  bookings             Booking[]
+  transactions         Transaction[]
+  document_counters    DocumentCounter[]
+
+  @@index([business_id])
+  @@map("outlets")
+}
+
+model UserOutlet {
+  user_id   String @db.Uuid
+  outlet_id String @db.Uuid
+
+  user   User   @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  outlet Outlet @relation(fields: [outlet_id], references: [id], onDelete: Cascade)
+
+  @@id([user_id, outlet_id])
+  @@map("user_outlets")
+}
+
+// Perangkat terdaftar (tablet kasir, printer thermal, cash drawer fisik)
+enum device_type {
+  pos_terminal
+  printer
+  cash_drawer
+  barcode_scanner
+  kds_screen
+}
+
+model Device {
+  id          String      @id @default(uuid()) @db.Uuid
+  outlet_id   String      @db.Uuid
+  device_type device_type
+  name        String      @db.VarChar(100) // "Kasir Depan", "Printer Dapur"
+  identifier  String?     @db.VarChar(150) // MAC address / IP / serial
+  config      Json        @default("{}") @db.JsonB // lebar kertas, dsb
+  is_active   Boolean     @default(true)
+
+  outlet Outlet @relation(fields: [outlet_id], references: [id], onDelete: Cascade)
+
+  @@map("devices")
+}
+
+// Meja untuk usaha F&B dine-in
+enum table_status {
+  available
+  occupied
+  reserved
+  inactive
+}
+
+model DiningTable {
+  id        String       @id @default(uuid()) @db.Uuid
+  outlet_id String       @db.Uuid
+  name      String       @db.VarChar(50) // "Meja 1", "VIP A"
+  area      String?      @db.VarChar(50) // "Indoor", "Outdoor", "Lantai 2"
+  capacity  Int          @default(4)
+  status    table_status @default(available)
+
+  outlet       Outlet        @relation(fields: [outlet_id], references: [id], onDelete: Cascade)
+  transactions Transaction[]
+
+  @@unique([outlet_id, name])
+  @@map("dining_tables")
+}
+
+// =====================================================================
+// 3. KATEGORI, SATUAN, PRODUK/JASA (GENERIK & FLEKSIBEL)
+// =====================================================================
+
+model Category {
+  id          String    @id @default(uuid()) @db.Uuid
+  business_id String    @db.Uuid
+  parent_id   String?   @db.Uuid
+  name        String    @db.VarChar(100)
+  sort_order  Int       @default(0)
+  is_active   Boolean   @default(true)
+  deleted_at  DateTime? @db.Timestamptz(6)
+
+  business Business   @relation(fields: [business_id], references: [id], onDelete: Cascade)
+  parent   Category?  @relation("CategoryParent", fields: [parent_id], references: [id], onDelete: SetNull)
+  children Category[] @relation("CategoryParent")
+  items    Item[]
+
+  @@index([business_id])
+  @@map("categories")
+}
+
+model Unit {
+  id            String  @id @default(uuid()) @db.Uuid
+  business_id   String  @db.Uuid
+  name          String  @db.VarChar(50) // Pieces, Kilogram, Jam, Porsi
+  symbol        String  @db.VarChar(10) // pcs, kg, jam, porsi
+  allow_decimal Boolean @default(false) // kg boleh 0.5; pcs tidak
+
+  business Business @relation(fields: [business_id], references: [id], onDelete: Cascade)
+  items    Item[]
+
+  @@unique([business_id, symbol])
+  @@map("units")
+}
+
+enum item_type {
+  product // barang fisik biasa
+  service // jasa (tidak butuh stok)
+  bundle // paket berisi beberapa item lain
+  ingredient // bahan baku (tidak dijual langsung, dipakai resep)
+}
+
+// 'open' = harga diinput bebas oleh kasir saat transaksi (jasa custom, barang bekas)
+enum pricing_type {
+  fixed
+  per_unit
+  per_duration
+  tiered
+  open
+}
+
+model Item {
+  id               String       @id @default(uuid()) @db.Uuid
+  business_id      String       @db.Uuid
+  category_id      String?      @db.Uuid
+  unit_id          String?      @db.Uuid
+  sku              String?      @db.VarChar(60)
+  barcode          String?      @db.VarChar(60)
+  name             String       @db.VarChar(150)
+  description      String?
+  item_type        item_type    @default(product)
+  pricing_type     pricing_type @default(fixed)
+  base_price       Decimal      @default(0) @db.Decimal(14, 2)
+  cost_price       Decimal      @default(0) @db.Decimal(14, 2)
+  track_stock      Boolean      @default(true)
+  use_recipe       Boolean      @default(false) // jika TRUE, penjualan mengurangi stok bahan (BOM)
+  duration_minutes Int? // untuk pricing_type = per_duration
+  commission_type  String?      @db.VarChar(20) // 'percentage' / 'fixed'
+  commission_value Decimal      @default(0) @db.Decimal(14, 2)
+  image_url        String?
+  attributes       Json         @default("{}") @db.JsonB
+  is_active        Boolean      @default(true)
+  created_at       DateTime     @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime     @updatedAt @db.Timestamptz(6)
+  deleted_at       DateTime?    @db.Timestamptz(6)
+
+  business Business  @relation(fields: [business_id], references: [id], onDelete: Cascade)
+  category Category? @relation(fields: [category_id], references: [id], onDelete: SetNull)
+  unit     Unit?     @relation(fields: [unit_id], references: [id], onDelete: SetNull)
+
+  variants              ItemVariant[]
+  price_tiers           PriceTier[]
+  outlet_item_prices    OutletItemPrice[]
+  outlet_items          OutletItem[]
+  bundles_as_bundle     BundleComponent[]   @relation("BundleParent")
+  bundles_as_component  BundleComponent[]   @relation("BundleComponentItem")
+  recipes_as_item       Recipe[]            @relation("RecipeItem")
+  recipes_as_ingredient Recipe[]            @relation("RecipeIngredient")
+  modifiers_ingredient  Modifier[]
+  item_modifier_groups  ItemModifierGroup[]
+  stock_transfer_items  StockTransferItem[]
+  stock_opname_items    StockOpnameItem[]
+  purchase_order_items  PurchaseOrderItem[]
+  transaction_items     TransactionItem[]
+  booking_items         BookingItem[]
+  inventory             Inventory[]
+
+  @@unique([business_id, sku])
+  @@index([business_id])
+  @@index([category_id])
+  @@index([barcode])
+  @@index([attributes], type: Gin)
+  @@map("items")
+}
+
+model ItemVariant {
+  id               String    @id @default(uuid()) @db.Uuid
+  item_id          String    @db.Uuid
+  name             String    @db.VarChar(100)
+  sku_suffix       String?   @db.VarChar(30)
+  barcode          String?   @db.VarChar(60)
+  price_adjustment Decimal   @default(0) @db.Decimal(14, 2)
+  cost_adjustment  Decimal   @default(0) @db.Decimal(14, 2)
+  is_active        Boolean   @default(true)
+  deleted_at       DateTime? @db.Timestamptz(6)
+
+  item Item @relation(fields: [item_id], references: [id], onDelete: Cascade)
+
+  price_tiers          PriceTier[]
+  outlet_item_prices   OutletItemPrice[]
+  bundle_components    BundleComponent[]
+  recipes              Recipe[]
+  stock_transfer_items StockTransferItem[]
+  stock_opname_items   StockOpnameItem[]
+  purchase_order_items PurchaseOrderItem[]
+  transaction_items    TransactionItem[]
+  booking_items        BookingItem[]
+  inventory            Inventory[]
+
+  @@index([item_id])
+  @@map("item_variants")
+}
+
+// Harga bertingkat (grosir): beli >= 12 pcs harga turun, dst
+model PriceTier {
+  id         String   @id @default(uuid()) @db.Uuid
+  item_id    String   @db.Uuid
+  variant_id String?  @db.Uuid
+  min_qty    Decimal  @db.Decimal(12, 3)
+  max_qty    Decimal? @db.Decimal(12, 3)
+  price      Decimal  @db.Decimal(14, 2)
+
+  item    Item         @relation(fields: [item_id], references: [id], onDelete: Cascade)
+  variant ItemVariant? @relation(fields: [variant_id], references: [id], onDelete: Cascade)
+
+  @@index([item_id])
+  @@map("price_tiers")
+}
+
+// Override harga per outlet
+model OutletItemPrice {
+  outlet_id  String  @db.Uuid
+  item_id    String  @db.Uuid
+  variant_id String  @db.Uuid
+  price      Decimal @db.Decimal(14, 2)
+
+  outlet  Outlet      @relation(fields: [outlet_id], references: [id], onDelete: Cascade)
+  item    Item        @relation(fields: [item_id], references: [id], onDelete: Cascade)
+  variant ItemVariant @relation(fields: [variant_id], references: [id], onDelete: Cascade)
+
+  @@id([outlet_id, item_id, variant_id])
+  @@map("outlet_item_prices")
+}
+
+// Item mana yang tersedia di outlet mana (menu bisa beda antar cabang)
+model OutletItem {
+  outlet_id    String  @db.Uuid
+  item_id      String  @db.Uuid
+  is_available Boolean @default(true) // "habis" sementara tanpa menonaktifkan global
+
+  outlet Outlet @relation(fields: [outlet_id], references: [id], onDelete: Cascade)
+  item   Item   @relation(fields: [item_id], references: [id], onDelete: Cascade)
+
+  @@id([outlet_id, item_id])
+  @@map("outlet_items")
+}
+
+// =====================================================================
+// 4. BUNDLE/PAKET & RESEP/BAHAN BAKU (BOM)
+// =====================================================================
+
+// Isi paket: item bertipe 'bundle' terdiri dari item-item lain
+// Contoh: "Paket Hemat A" = 1 Nasi + 1 Ayam Goreng + 1 Es Teh
+// CHECK (bundle_item_id <> component_item_id) — ditambahkan manual di migrasi SQL
+model BundleComponent {
+  id                    String  @id @default(uuid()) @db.Uuid
+  bundle_item_id        String  @db.Uuid
+  component_item_id     String  @db.Uuid
+  component_variant_id  String? @db.Uuid
+  quantity              Decimal @default(1) @db.Decimal(12, 3)
+
+  bundle_item       Item         @relation("BundleParent", fields: [bundle_item_id], references: [id], onDelete: Cascade)
+  component_item    Item         @relation("BundleComponentItem", fields: [component_item_id], references: [id], onDelete: Cascade)
+  component_variant ItemVariant? @relation(fields: [component_variant_id], references: [id])
+
+  @@index([bundle_item_id])
+  @@map("bundle_components")
+}
+
+// Resep / Bill of Materials: item jadi terbuat dari bahan baku
+// Contoh: 1 "Es Teh Manis" = 5g teh + 20g gula + 1 cup plastik
+// Saat terjual, stok BAHAN yang berkurang (bukan stok "Es Teh")
+// CHECK (item_id <> ingredient_item_id) — ditambahkan manual di migrasi SQL
+model Recipe {
+  id                 String  @id @default(uuid()) @db.Uuid
+  item_id            String  @db.Uuid
+  variant_id         String? @db.Uuid
+  ingredient_item_id String  @db.Uuid
+  quantity_used      Decimal @db.Decimal(12, 4) // jumlah bahan per 1 unit terjual
+
+  item            Item         @relation("RecipeItem", fields: [item_id], references: [id], onDelete: Cascade)
+  variant         ItemVariant? @relation(fields: [variant_id], references: [id], onDelete: Cascade)
+  ingredient_item Item         @relation("RecipeIngredient", fields: [ingredient_item_id], references: [id], onDelete: Cascade)
+
+  @@index([item_id])
+  @@map("recipes")
+}
+
+// =====================================================================
+// 5. MODIFIER (Topping, Level Pedas, Add-on Jasa)
+// =====================================================================
+
+enum modifier_selection_type {
+  single
+  multiple
+}
+
+model ModifierGroup {
+  id             String                  @id @default(uuid()) @db.Uuid
+  business_id    String                  @db.Uuid
+  name           String                  @db.VarChar(100)
+  selection_type modifier_selection_type @default(single)
+  is_required    Boolean                 @default(false)
+  min_select     Int                     @default(0)
+  max_select     Int                     @default(1)
+  deleted_at     DateTime?               @db.Timestamptz(6)
+
+  business Business @relation(fields: [business_id], references: [id], onDelete: Cascade)
+
+  modifiers            Modifier[]
+  item_modifier_groups ItemModifierGroup[]
+
+  @@map("modifier_groups")
+}
+
+model Modifier {
+  id                  String   @id @default(uuid()) @db.Uuid
+  modifier_group_id   String   @db.Uuid
+  name                String   @db.VarChar(100)
+  price_adjustment    Decimal  @default(0) @db.Decimal(14, 2)
+  // modifier juga bisa mengurangi stok bahan (misal topping keju):
+  ingredient_item_id  String?  @db.Uuid
+  ingredient_qty      Decimal? @db.Decimal(12, 4)
+  is_active           Boolean  @default(true)
+
+  modifier_group  ModifierGroup @relation(fields: [modifier_group_id], references: [id], onDelete: Cascade)
+  ingredient_item Item?         @relation(fields: [ingredient_item_id], references: [id])
+
+  transaction_item_modifiers TransactionItemModifier[]
+
+  @@index([modifier_group_id])
+  @@map("modifiers")
+}
+
+model ItemModifierGroup {
+  item_id           String @db.Uuid
+  modifier_group_id String @db.Uuid
+
+  item           Item          @relation(fields: [item_id], references: [id], onDelete: Cascade)
+  modifier_group ModifierGroup @relation(fields: [modifier_group_id], references: [id], onDelete: Cascade)
+
+  @@id([item_id, modifier_group_id])
+  @@map("item_modifier_groups")
+}
+
+// =====================================================================
+// 6. INVENTORY, STOCK MOVEMENT, TRANSFER ANTAR OUTLET
+// =====================================================================
+
+model Inventory {
+  id               String   @id @default(uuid()) @db.Uuid
+  outlet_id        String   @db.Uuid
+  item_id          String   @db.Uuid
+  variant_id       String?  @db.Uuid
+  quantity_on_hand Decimal  @default(0) @db.Decimal(14, 3)
+  reorder_level    Decimal  @default(0) @db.Decimal(14, 3)
+  avg_cost         Decimal  @default(0) @db.Decimal(14, 2) // moving average cost utk laporan laba akurat
+  updated_at       DateTime @updatedAt @db.Timestamptz(6)
+
+  outlet  Outlet       @relation(fields: [outlet_id], references: [id], onDelete: Cascade)
+  item    Item         @relation(fields: [item_id], references: [id], onDelete: Cascade)
+  variant ItemVariant? @relation(fields: [variant_id], references: [id], onDelete: Cascade)
+
+  stock_movements StockMovement[]
+
+  @@unique([outlet_id, item_id, variant_id])
+  @@index([outlet_id])
+  @@map("inventory")
+}
+
+enum stock_movement_type {
+  purchase_in
+  sale_out
+  recipe_out
+  adjustment
+  return_in
+  return_out
+  transfer_in
+  transfer_out
+  waste
+  production_in
+}
+
+model StockMovement {
+  id              String              @id @default(uuid()) @db.Uuid
+  inventory_id    String              @db.Uuid
+  movement_type   stock_movement_type
+  quantity        Decimal             @db.Decimal(14, 3) // positif=masuk, negatif=keluar
+  unit_cost       Decimal?            @db.Decimal(14, 2)
+  reference_type  String?             @db.VarChar(50) // 'transaction','purchase_order','stock_transfer','manual'
+  reference_id    String?             @db.Uuid
+  notes           String?
+  created_by      String?             @db.Uuid
+  created_at      DateTime            @default(now()) @db.Timestamptz(6)
+
+  inventory Inventory @relation(fields: [inventory_id], references: [id], onDelete: Cascade)
+  creator   User?     @relation("StockMovementCreatedBy", fields: [created_by], references: [id])
+
+  @@index([inventory_id])
+  @@index([reference_type, reference_id])
+  @@map("stock_movements")
+}
+
+// Dokumen transfer stok antar outlet
+// CHECK (from_outlet_id <> to_outlet_id) — ditambahkan manual di migrasi SQL
+enum transfer_status {
+  draft
+  sent
+  received
+  cancelled
+}
+
+model StockTransfer {
+  id              String          @id @default(uuid()) @db.Uuid
+  business_id     String          @db.Uuid
+  from_outlet_id  String          @db.Uuid
+  to_outlet_id    String          @db.Uuid
+  transfer_number String          @db.VarChar(60)
+  status          transfer_status @default(draft)
+  notes           String?
+  created_by      String?         @db.Uuid
+  created_at      DateTime        @default(now()) @db.Timestamptz(6)
+  received_at     DateTime?       @db.Timestamptz(6)
+
+  business    Business @relation(fields: [business_id], references: [id], onDelete: Cascade)
+  from_outlet Outlet   @relation("StockTransferFromOutlet", fields: [from_outlet_id], references: [id])
+  to_outlet   Outlet   @relation("StockTransferToOutlet", fields: [to_outlet_id], references: [id])
+  creator     User?    @relation("StockTransferCreatedBy", fields: [created_by], references: [id])
+
+  items StockTransferItem[]
+
+  @@map("stock_transfers")
+}
+
+model StockTransferItem {
+  id                String  @id @default(uuid()) @db.Uuid
+  stock_transfer_id String  @db.Uuid
+  item_id           String  @db.Uuid
+  variant_id        String? @db.Uuid
+  quantity          Decimal @db.Decimal(14, 3)
+
+  stock_transfer StockTransfer @relation(fields: [stock_transfer_id], references: [id], onDelete: Cascade)
+  item           Item          @relation(fields: [item_id], references: [id])
+  variant        ItemVariant?  @relation(fields: [variant_id], references: [id])
+
+  @@map("stock_transfer_items")
+}
+
+// Stock opname (penghitungan fisik berkala)
+model StockOpname {
+  id            String    @id @default(uuid()) @db.Uuid
+  outlet_id     String    @db.Uuid
+  opname_number String    @db.VarChar(60)
+  status        String    @default("draft") @db.VarChar(20) // draft, completed
+  notes         String?
+  created_by    String?   @db.Uuid
+  created_at    DateTime  @default(now()) @db.Timestamptz(6)
+  completed_at  DateTime? @db.Timestamptz(6)
+
+  outlet  Outlet @relation(fields: [outlet_id], references: [id], onDelete: Cascade)
+  creator User?  @relation("StockOpnameCreatedBy", fields: [created_by], references: [id])
+
+  items StockOpnameItem[]
+
+  @@map("stock_opnames")
+}
+
+model StockOpnameItem {
+  id              String  @id @default(uuid()) @db.Uuid
+  stock_opname_id String  @db.Uuid
+  item_id         String  @db.Uuid
+  variant_id      String? @db.Uuid
+  system_qty      Decimal @db.Decimal(14, 3) // stok menurut sistem
+  counted_qty     Decimal @db.Decimal(14, 3) // stok hasil hitung fisik
+  // Kolom generated di DB (GENERATED ALWAYS AS (counted_qty - system_qty) STORED) —
+  // ditulis manual di migrasi SQL. Nullable di sini karena Postgres melaporkan kolom
+  // generated sebagai nullable=YES di catalog meski nilainya selalu terisi; field ini
+  // read-only, jangan diisi lewat create()/update().
+  difference      Decimal? @db.Decimal(14, 3)
+
+  stock_opname StockOpname  @relation(fields: [stock_opname_id], references: [id], onDelete: Cascade)
+  item         Item         @relation(fields: [item_id], references: [id])
+  variant      ItemVariant? @relation(fields: [variant_id], references: [id])
+
+  @@map("stock_opname_items")
+}
+
+// =====================================================================
+// 7. SUPPLIER & PURCHASE ORDER
+// =====================================================================
+
+model Supplier {
+  id             String    @id @default(uuid()) @db.Uuid
+  business_id    String    @db.Uuid
+  name           String    @db.VarChar(150)
+  contact_person String?   @db.VarChar(100)
+  phone          String?   @db.VarChar(30)
+  email          String?   @db.VarChar(150)
+  address        String?
+  deleted_at     DateTime? @db.Timestamptz(6)
+
+  business        Business        @relation(fields: [business_id], references: [id], onDelete: Cascade)
+  purchase_orders PurchaseOrder[]
+
+  @@map("suppliers")
+}
+
+enum po_status {
+  draft
+  ordered
+  partially_received
+  received
+  cancelled
+}
+
+model PurchaseOrder {
+  id           String    @id @default(uuid()) @db.Uuid
+  business_id  String    @db.Uuid
+  outlet_id    String    @db.Uuid
+  supplier_id  String?   @db.Uuid
+  po_number    String    @db.VarChar(60)
+  status       po_status @default(draft)
+  total_amount Decimal   @default(0) @db.Decimal(14, 2)
+  amount_paid  Decimal   @default(0) @db.Decimal(14, 2) // mendukung utang ke supplier
+  due_date     DateTime? @db.Date
+  created_by   String?   @db.Uuid
+  created_at   DateTime  @default(now()) @db.Timestamptz(6)
+  received_at  DateTime? @db.Timestamptz(6)
+
+  business Business  @relation(fields: [business_id], references: [id], onDelete: Cascade)
+  outlet   Outlet    @relation(fields: [outlet_id], references: [id], onDelete: Cascade)
+  supplier Supplier? @relation(fields: [supplier_id], references: [id])
+  creator  User?     @relation("PurchaseOrderCreatedBy", fields: [created_by], references: [id])
+
+  items PurchaseOrderItem[]
+
+  @@map("purchase_orders")
+}
+
+model PurchaseOrderItem {
+  id                String  @id @default(uuid()) @db.Uuid
+  purchase_order_id String  @db.Uuid
+  item_id           String  @db.Uuid
+  variant_id        String? @db.Uuid
+  quantity_ordered  Decimal @db.Decimal(14, 3)
+  quantity_received Decimal @default(0) @db.Decimal(14, 3)
+  unit_cost         Decimal @db.Decimal(14, 2)
+
+  purchase_order PurchaseOrder @relation(fields: [purchase_order_id], references: [id], onDelete: Cascade)
+  item           Item          @relation(fields: [item_id], references: [id])
+  variant        ItemVariant?  @relation(fields: [variant_id], references: [id])
+
+  @@map("purchase_order_items")
+}
+
+// =====================================================================
+// 8. CUSTOMER, LOYALTY, KASBON (PIUTANG)
+// =====================================================================
+
+model Customer {
+  id             String    @id @default(uuid()) @db.Uuid
+  business_id    String    @db.Uuid
+  name           String?   @db.VarChar(150)
+  phone          String?   @db.VarChar(30)
+  email          String?   @db.VarChar(150)
+  address        String?
+  birthday       DateTime? @db.Date // promo ulang tahun
+  loyalty_points Int       @default(0)
+  total_spent    Decimal   @default(0) @db.Decimal(14, 2)
+  visit_count    Int       @default(0)
+  credit_limit   Decimal   @default(0) @db.Decimal(14, 2) // batas maksimal kasbon
+  notes          String?
+  created_at     DateTime  @default(now()) @db.Timestamptz(6)
+  deleted_at     DateTime? @db.Timestamptz(6)
+
+  business Business @relation(fields: [business_id], references: [id], onDelete: Cascade)
+
+  loyalty_point_entries LoyaltyPointEntry[]
+  customer_receivables  CustomerReceivable[]
+  voucher_redemptions   VoucherRedemption[]
+  bookings              Booking[]
+  transactions          Transaction[]
+
+  @@index([business_id])
+  @@index([phone])
+  @@map("customers")
+}
+
+// Konfigurasi program loyalty per business
+model LoyaltyProgram {
+  business_id       String  @id @db.Uuid
+  points_per_amount Decimal @default(10000) @db.Decimal(14, 2) // dapat 1 poin tiap belanja Rp10.000
+  point_value       Decimal @default(100) @db.Decimal(14, 2) // 1 poin = Rp100 saat ditukar
+  min_redeem_points Int     @default(10)
+  is_active         Boolean @default(true)
+
+  business Business @relation(fields: [business_id], references: [id], onDelete: Cascade)
+
+  @@map("loyalty_programs")
+}
+
+// Riwayat poin masuk/keluar (jangan hanya simpan saldo)
+enum loyalty_entry_type {
+  earn
+  redeem
+  adjustment
+  expired
+}
+
+model LoyaltyPointEntry {
+  id             String             @id @default(uuid()) @db.Uuid
+  customer_id    String             @db.Uuid
+  entry_type     loyalty_entry_type
+  points         Int // positif=masuk, negatif=keluar
+  transaction_id String?            @db.Uuid
+  notes          String?
+  created_at     DateTime           @default(now()) @db.Timestamptz(6)
+
+  customer    Customer     @relation(fields: [customer_id], references: [id], onDelete: Cascade)
+  transaction Transaction? @relation(fields: [transaction_id], references: [id])
+
+  @@index([customer_id])
+  @@map("loyalty_point_entries")
+}
+
+// KASBON / PIUTANG PELANGGAN — sangat umum di warung Indonesia
+enum receivable_status {
+  outstanding
+  partially_paid
+  paid
+  written_off
+}
+
+model CustomerReceivable {
+  id             String            @id @default(uuid()) @db.Uuid
+  business_id    String            @db.Uuid
+  customer_id    String            @db.Uuid
+  transaction_id String?           @db.Uuid // transaksi asal kasbon
+  amount         Decimal           @db.Decimal(14, 2)
+  amount_paid    Decimal           @default(0) @db.Decimal(14, 2)
+  status         receivable_status @default(outstanding)
+  due_date       DateTime?         @db.Date
+  notes          String?
+  created_at     DateTime          @default(now()) @db.Timestamptz(6)
+
+  business    Business     @relation(fields: [business_id], references: [id], onDelete: Cascade)
+  customer    Customer     @relation(fields: [customer_id], references: [id])
+  transaction Transaction? @relation(fields: [transaction_id], references: [id])
+
+  payments ReceivablePayment[]
+
+  @@index([customer_id])
+  @@map("customer_receivables")
+}
+
+// Cicilan pembayaran kasbon
+model ReceivablePayment {
+  id             String   @id @default(uuid()) @db.Uuid
+  receivable_id  String   @db.Uuid
+  amount         Decimal  @db.Decimal(14, 2)
+  payment_method String   @default("cash") @db.VarChar(30)
+  received_by    String?  @db.Uuid
+  paid_at        DateTime @default(now()) @db.Timestamptz(6)
+  notes          String?
+
+  receivable CustomerReceivable @relation(fields: [receivable_id], references: [id], onDelete: Cascade)
+  receiver   User?              @relation("ReceivablePaymentReceivedBy", fields: [received_by], references: [id])
+
+  @@map("receivable_payments")
+}
+
+// =====================================================================
+// 9. PAJAK, BIAYA LAYANAN, DISKON, VOUCHER
+// =====================================================================
+
+model Tax {
+  id           String  @id @default(uuid()) @db.Uuid
+  business_id  String  @db.Uuid
+  name         String  @db.VarChar(100) // "PPN 11%", "Service Charge 5%"
+  rate         Decimal @db.Decimal(5, 2)
+  is_inclusive Boolean @default(false)
+  tax_kind     String  @default("tax") @db.VarChar(20) // 'tax' | 'service_charge'
+  is_active    Boolean @default(true)
+
+  business Business @relation(fields: [business_id], references: [id], onDelete: Cascade)
+
+  business_settings BusinessSetting[]
+  transaction_taxes TransactionTax[]
+
+  @@map("taxes")
+}
+
+enum discount_type {
+  percentage
+  fixed_amount
+}
+
+enum discount_scope {
+  all_items
+  category
+  specific_items
+  min_purchase
+}
+
+// Diskon otomatis / promo berjadwal
+model Discount {
+  id            String         @id @default(uuid()) @db.Uuid
+  business_id   String         @db.Uuid
+  name          String         @db.VarChar(100)
+  discount_type discount_type
+  value         Decimal        @db.Decimal(14, 2)
+  scope         discount_scope @default(all_items)
+  // contoh conditions:
+  // {"category_ids": [...], "min_amount": 50000,
+  //  "days_of_week": [5,6], "hour_start": "14:00", "hour_end": "17:00"}
+  conditions    Json           @default("{}") @db.JsonB
+  start_date    DateTime?      @db.Timestamptz(6)
+  end_date      DateTime?      @db.Timestamptz(6)
+  is_active     Boolean        @default(true)
+  created_at    DateTime       @default(now()) @db.Timestamptz(6)
+  deleted_at    DateTime?      @db.Timestamptz(6)
+
+  business Business @relation(fields: [business_id], references: [id], onDelete: Cascade)
+
+  transaction_discounts TransactionDiscount[]
+
+  @@map("discounts")
+}
+
+// Voucher berkode unik (beda dari diskon otomatis)
+model Voucher {
+  id                 String        @id @default(uuid()) @db.Uuid
+  business_id        String        @db.Uuid
+  code               String        @db.VarChar(30)
+  discount_type      discount_type
+  value              Decimal       @db.Decimal(14, 2)
+  min_purchase       Decimal       @default(0) @db.Decimal(14, 2)
+  max_discount       Decimal?      @db.Decimal(14, 2) // batas maksimal potongan utk tipe persen
+  usage_limit        Int? // total pemakaian, NULL = tak terbatas
+  usage_count        Int           @default(0)
+  per_customer_limit Int           @default(1)
+  start_date         DateTime?     @db.Timestamptz(6)
+  end_date           DateTime?     @db.Timestamptz(6)
+  is_active          Boolean       @default(true)
+
+  business Business @relation(fields: [business_id], references: [id], onDelete: Cascade)
+
+  redemptions VoucherRedemption[]
+
+  @@unique([business_id, code])
+  @@map("vouchers")
+}
+
+model VoucherRedemption {
+  id             String   @id @default(uuid()) @db.Uuid
+  voucher_id     String   @db.Uuid
+  transaction_id String?  @db.Uuid
+  customer_id    String?  @db.Uuid
+  amount_applied Decimal  @db.Decimal(14, 2)
+  redeemed_at    DateTime @default(now()) @db.Timestamptz(6)
+
+  voucher     Voucher      @relation(fields: [voucher_id], references: [id], onDelete: Cascade)
+  transaction Transaction? @relation(fields: [transaction_id], references: [id])
+  customer    Customer?    @relation(fields: [customer_id], references: [id])
+
+  @@map("voucher_redemptions")
+}
+
+// =====================================================================
+// 10. CHANNEL PEMBAYARAN (konfigurasi per business)
+// =====================================================================
+
+// Konfigurasi metode bayar yang tersedia + biaya MDR-nya
+model PaymentChannel {
+  id             String  @id @default(uuid()) @db.Uuid
+  business_id    String  @db.Uuid
+  name           String  @db.VarChar(60) // "Tunai", "QRIS BCA", "GoPay", "Transfer BRI"
+  channel_type   String  @db.VarChar(30) // cash, qris, e_wallet, bank_transfer, debit, credit
+  fee_percentage Decimal @default(0) @db.Decimal(5, 3) // MDR, misal 0.7% untuk QRIS
+  fee_fixed      Decimal @default(0) @db.Decimal(14, 2)
+  account_info   Json    @default("{}") @db.JsonB // no rekening, nama, dsb (utk tampil di struk)
+  is_active      Boolean @default(true)
+  sort_order     Int     @default(0)
+
+  business Business @relation(fields: [business_id], references: [id], onDelete: Cascade)
+
+  payments Payment[]
+
+  @@map("payment_channels")
+}
+
+// =====================================================================
+// 11. SHIFT, CASH DRAWER, KAS MASUK/KELUAR, PENGELUARAN
+// =====================================================================
+
+enum drawer_status {
+  open
+  closed
+}
+
+model CashDrawerSession {
+  id               String        @id @default(uuid()) @db.Uuid
+  outlet_id        String        @db.Uuid
+  opened_by        String        @db.Uuid
+  closed_by        String?       @db.Uuid
+  opening_balance  Decimal       @default(0) @db.Decimal(14, 2)
+  closing_balance  Decimal?      @db.Decimal(14, 2)
+  expected_balance Decimal?      @db.Decimal(14, 2)
+  status           drawer_status @default(open)
+  opened_at        DateTime      @default(now()) @db.Timestamptz(6)
+  closed_at        DateTime?     @db.Timestamptz(6)
+  notes            String?
+
+  outlet Outlet @relation(fields: [outlet_id], references: [id], onDelete: Cascade)
+  opener User   @relation("CashDrawerSessionOpenedBy", fields: [opened_by], references: [id])
+  closer User?  @relation("CashDrawerSessionClosedBy", fields: [closed_by], references: [id])
+
+  movements    CashDrawerMovement[]
+  transactions Transaction[]
+
+  @@index([outlet_id])
+  @@map("cash_drawer_sessions")
+}
+
+// Kas masuk/keluar laci di luar transaksi penjualan
+// (setor modal, ambil uang pribadi/prive, bayar parkir, dll)
+enum cash_flow_type {
+  cash_in
+  cash_out
+}
+
+model CashDrawerMovement {
+  id                      String         @id @default(uuid()) @db.Uuid
+  cash_drawer_session_id  String         @db.Uuid
+  flow_type               cash_flow_type
+  amount                  Decimal        @db.Decimal(14, 2)
+  reason                  String         @db.VarChar(150) // "Setor modal", "Prive", "Beli galon"
+  created_by              String?        @db.Uuid
+  created_at              DateTime       @default(now()) @db.Timestamptz(6)
+
+  cash_drawer_session CashDrawerSession @relation(fields: [cash_drawer_session_id], references: [id], onDelete: Cascade)
+  creator             User?             @relation("CashDrawerMovementCreatedBy", fields: [created_by], references: [id])
+
+  @@map("cash_drawer_movements")
+}
+
+// Pengeluaran operasional (biaya usaha, terpisah dari kas laci)
+model ExpenseCategory {
+  id          String @id @default(uuid()) @db.Uuid
+  business_id String @db.Uuid
+  name        String @db.VarChar(100) // "Listrik", "Sewa", "Gaji", "Bahan Baku"
+
+  business Business  @relation(fields: [business_id], references: [id], onDelete: Cascade)
+  expenses Expense[]
+
+  @@map("expense_categories")
+}
+
+model Expense {
+  id           String    @id @default(uuid()) @db.Uuid
+  business_id  String    @db.Uuid
+  outlet_id    String?   @db.Uuid
+  category_id  String?   @db.Uuid
+  amount       Decimal   @db.Decimal(14, 2)
+  description  String?
+  expense_date DateTime  @default(now()) @db.Date
+  receipt_url  String? // foto nota
+  created_by   String?   @db.Uuid
+  created_at   DateTime  @default(now()) @db.Timestamptz(6)
+
+  business Business         @relation(fields: [business_id], references: [id], onDelete: Cascade)
+  outlet   Outlet?          @relation(fields: [outlet_id], references: [id])
+  category ExpenseCategory? @relation(fields: [category_id], references: [id])
+  creator  User?            @relation("ExpenseCreatedBy", fields: [created_by], references: [id])
+
+  @@index([business_id, expense_date])
+  @@map("expenses")
+}
+
+model Shift {
+  id        String    @id @default(uuid()) @db.Uuid
+  outlet_id String    @db.Uuid
+  user_id   String    @db.Uuid
+  clock_in  DateTime  @default(now()) @db.Timestamptz(6)
+  clock_out DateTime? @db.Timestamptz(6)
+
+  outlet Outlet @relation(fields: [outlet_id], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [user_id], references: [id])
+
+  @@map("shifts")
+}
+
+// =====================================================================
+// 12. BOOKING / JANJI TEMU (usaha jasa: salon, bengkel, laundry)
+// =====================================================================
+
+enum booking_status {
+  pending
+  confirmed
+  in_progress
+  completed
+  cancelled
+  no_show
+}
+
+model Booking {
+  id               String         @id @default(uuid()) @db.Uuid
+  business_id      String         @db.Uuid
+  outlet_id        String         @db.Uuid
+  customer_id      String?        @db.Uuid
+  assigned_to      String?        @db.Uuid // karyawan yang menangani
+  booking_number   String         @db.VarChar(60)
+  scheduled_at     DateTime       @db.Timestamptz(6)
+  duration_minutes Int            @default(60)
+  status           booking_status @default(pending)
+  transaction_id   String?        @db.Uuid // terisi setelah booking dibayar
+  notes            String?
+  created_at       DateTime       @default(now()) @db.Timestamptz(6)
+
+  business Business  @relation(fields: [business_id], references: [id], onDelete: Cascade)
+  outlet   Outlet    @relation(fields: [outlet_id], references: [id], onDelete: Cascade)
+  customer Customer? @relation(fields: [customer_id], references: [id])
+  assignee User?     @relation("BookingAssignedTo", fields: [assigned_to], references: [id])
+  paid_by_transaction Transaction? @relation("BookingTransaction", fields: [transaction_id], references: [id])
+
+  items                     BookingItem[]
+  transactions_from_booking Transaction[] @relation("TransactionBooking")
+
+  @@index([outlet_id, scheduled_at])
+  @@map("bookings")
+}
+
+model BookingItem {
+  id         String  @id @default(uuid()) @db.Uuid
+  booking_id String  @db.Uuid
+  item_id    String  @db.Uuid
+  variant_id String? @db.Uuid
+  quantity   Decimal @default(1) @db.Decimal(12, 3)
+
+  booking Booking      @relation(fields: [booking_id], references: [id], onDelete: Cascade)
+  item    Item         @relation(fields: [item_id], references: [id])
+  variant ItemVariant? @relation(fields: [variant_id], references: [id])
+
+  @@map("booking_items")
+}
+
+// =====================================================================
+// 13. TRANSAKSI / ORDER (INTI SISTEM)
+// =====================================================================
+
+enum order_type {
+  dine_in
+  takeaway
+  delivery
+  retail
+  service
+}
+
+enum transaction_status {
+  open // open bill: pesanan aktif, belum dibayar (dine-in / tab)
+  pending // menunggu pembayaran
+  completed
+  void
+  refunded
+  partially_refunded
+}
+
+enum transaction_type {
+  sale
+  refund
+}
+
+model Transaction {
+  id                        String             @id @default(uuid()) @db.Uuid
+  business_id               String             @db.Uuid
+  outlet_id                 String             @db.Uuid
+  cashier_id                String             @db.Uuid
+  customer_id                String?           @db.Uuid
+  dining_table_id            String?           @db.Uuid // untuk dine-in
+  booking_id                 String?           @db.Uuid
+  cash_drawer_session_id     String?           @db.Uuid
+  transaction_number         String            @db.VarChar(60)
+  order_type                 order_type        @default(retail)
+  transaction_type           transaction_type  @default(sale)
+  status                     transaction_status @default(completed)
+  guest_count                Int? // jumlah tamu (F&B)
+  subtotal                   Decimal           @default(0) @db.Decimal(14, 2)
+  discount_total              Decimal          @default(0) @db.Decimal(14, 2)
+  tax_total                   Decimal          @default(0) @db.Decimal(14, 2)
+  service_charge_total        Decimal          @default(0) @db.Decimal(14, 2)
+  rounding_adjustment         Decimal          @default(0) @db.Decimal(14, 2)
+  total                       Decimal          @default(0) @db.Decimal(14, 2)
+  amount_paid                 Decimal          @default(0) @db.Decimal(14, 2)
+  change_due                  Decimal          @default(0) @db.Decimal(14, 2)
+  total_cost                  Decimal          @default(0) @db.Decimal(14, 2) // HPP total, utk laporan laba cepat
+  void_reason                 String?
+  voided_by                   String?          @db.Uuid
+  reference_transaction_id    String?          @db.Uuid
+  delivery_address             String? // untuk order_type = delivery
+  delivery_fee                 Decimal         @default(0) @db.Decimal(14, 2)
+  notes                        String?
+  created_at                   DateTime        @default(now()) @db.Timestamptz(6)
+  completed_at                 DateTime?       @db.Timestamptz(6)
+
+  business            Business           @relation(fields: [business_id], references: [id], onDelete: Cascade)
+  outlet              Outlet             @relation(fields: [outlet_id], references: [id], onDelete: Cascade)
+  cashier             User               @relation("TransactionCashier", fields: [cashier_id], references: [id])
+  customer            Customer?          @relation(fields: [customer_id], references: [id])
+  dining_table        DiningTable?       @relation(fields: [dining_table_id], references: [id])
+  booking             Booking?           @relation("TransactionBooking", fields: [booking_id], references: [id])
+  cash_drawer_session CashDrawerSession? @relation(fields: [cash_drawer_session_id], references: [id])
+  voider              User?              @relation("TransactionVoidedBy", fields: [voided_by], references: [id])
+  reference_transaction Transaction?     @relation("TransactionReference", fields: [reference_transaction_id], references: [id])
+
+  refund_transactions   Transaction[]         @relation("TransactionReference")
+  bookings_paid         Booking[]             @relation("BookingTransaction")
+  items                 TransactionItem[]
+  discounts             TransactionDiscount[]
+  taxes                 TransactionTax[]
+  payments              Payment[]
+  loyalty_point_entries LoyaltyPointEntry[]
+  customer_receivables  CustomerReceivable[]
+  voucher_redemptions   VoucherRedemption[]
+
+  @@unique([business_id, transaction_number])
+  @@index([outlet_id, created_at])
+  @@index([business_id, created_at])
+  @@index([customer_id])
+  // Partial index: `WHERE status = 'open'` ditambahkan manual di migrasi SQL
+  // untuk mempercepat pencarian open bill.
+  @@index([outlet_id, status])
+  @@map("transactions")
+}
+
+model TransactionItem {
+  id                     String  @id @default(uuid()) @db.Uuid
+  transaction_id         String  @db.Uuid
+  item_id                String? @db.Uuid
+  variant_id             String? @db.Uuid
+  served_by              String? @db.Uuid // karyawan yg mengerjakan (basis komisi)
+  item_name_snapshot     String  @db.VarChar(150)
+  variant_name_snapshot  String? @db.VarChar(100)
+  quantity               Decimal @db.Decimal(14, 3)
+  unit_price             Decimal @db.Decimal(14, 2)
+  unit_cost_snapshot     Decimal @default(0) @db.Decimal(14, 2) // HPP saat itu
+  line_discount           Decimal @default(0) @db.Decimal(14, 2)
+  subtotal                Decimal @db.Decimal(14, 2)
+  is_refunded              Boolean @default(false)
+  notes                    String? // "tanpa bawang", dsb
+
+  transaction Transaction  @relation(fields: [transaction_id], references: [id], onDelete: Cascade)
+  item        Item?        @relation(fields: [item_id], references: [id])
+  variant     ItemVariant? @relation(fields: [variant_id], references: [id])
+  server      User?        @relation("TransactionItemServedBy", fields: [served_by], references: [id])
+
+  modifiers          TransactionItemModifier[]
+  commission_entries CommissionEntry[]
+
+  @@index([transaction_id])
+  @@index([item_id])
+  @@map("transaction_items")
+}
+
+model TransactionItemModifier {
+  id                        String  @id @default(uuid()) @db.Uuid
+  transaction_item_id       String  @db.Uuid
+  modifier_id               String? @db.Uuid
+  modifier_name_snapshot    String  @db.VarChar(100)
+  price_adjustment_snapshot Decimal @default(0) @db.Decimal(14, 2)
+
+  transaction_item TransactionItem @relation(fields: [transaction_item_id], references: [id], onDelete: Cascade)
+  modifier         Modifier?       @relation(fields: [modifier_id], references: [id])
+
+  @@map("transaction_item_modifiers")
+}
+
+model TransactionDiscount {
+  id                     String  @id @default(uuid()) @db.Uuid
+  transaction_id         String  @db.Uuid
+  discount_id            String? @db.Uuid
+  discount_name_snapshot String? @db.VarChar(100)
+  amount_applied         Decimal @db.Decimal(14, 2)
+
+  transaction Transaction @relation(fields: [transaction_id], references: [id], onDelete: Cascade)
+  discount    Discount?   @relation(fields: [discount_id], references: [id])
+
+  @@map("transaction_discounts")
+}
+
+model TransactionTax {
+  id                String   @id @default(uuid()) @db.Uuid
+  transaction_id    String   @db.Uuid
+  tax_id            String?  @db.Uuid
+  tax_name_snapshot String?  @db.VarChar(100)
+  rate_snapshot     Decimal? @db.Decimal(5, 2)
+  amount            Decimal  @db.Decimal(14, 2)
+
+  transaction Transaction @relation(fields: [transaction_id], references: [id], onDelete: Cascade)
+  tax         Tax?        @relation(fields: [tax_id], references: [id])
+
+  @@map("transaction_taxes")
+}
+
+// =====================================================================
+// 14. PEMBAYARAN (multi-metode per transaksi, termasuk kasbon)
+// =====================================================================
+
+model Payment {
+  id                    String   @id @default(uuid()) @db.Uuid
+  transaction_id        String   @db.Uuid
+  payment_channel_id    String?  @db.Uuid
+  channel_name_snapshot String   @db.VarChar(60) // "Tunai", "QRIS BCA"
+  amount                Decimal  @db.Decimal(14, 2)
+  fee_amount             Decimal @default(0) @db.Decimal(14, 2) // MDR terhitung, utk laporan net revenue
+  reference_number       String? @db.VarChar(100)
+  is_receivable           Boolean @default(false) // TRUE = dibayar sebagai kasbon/piutang
+  paid_at                 DateTime @default(now()) @db.Timestamptz(6)
+
+  transaction     Transaction     @relation(fields: [transaction_id], references: [id], onDelete: Cascade)
+  payment_channel PaymentChannel? @relation(fields: [payment_channel_id], references: [id])
+
+  @@index([transaction_id])
+  @@map("payments")
+}
+
+// =====================================================================
+// 15. KOMISI KARYAWAN (salon, barbershop, bengkel)
+// =====================================================================
+
+model CommissionEntry {
+  id                  String    @id @default(uuid()) @db.Uuid
+  business_id         String    @db.Uuid
+  user_id             String    @db.Uuid
+  transaction_item_id String    @db.Uuid
+  amount              Decimal   @db.Decimal(14, 2)
+  is_paid             Boolean   @default(false)
+  paid_at             DateTime? @db.Timestamptz(6)
+  created_at          DateTime  @default(now()) @db.Timestamptz(6)
+
+  business         Business        @relation(fields: [business_id], references: [id], onDelete: Cascade)
+  user             User            @relation(fields: [user_id], references: [id])
+  transaction_item TransactionItem @relation(fields: [transaction_item_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id, is_paid])
+  @@map("commission_entries")
+}
+
+// =====================================================================
+// 16. AUDIT LOG & NOMOR URUT DOKUMEN
+// =====================================================================
+
+model AuditLog {
+  id          String   @id @default(uuid()) @db.Uuid
+  business_id String   @db.Uuid
+  user_id     String?  @db.Uuid
+  action      String   @db.VarChar(50)
+  entity_type String   @db.VarChar(50)
+  entity_id   String?  @db.Uuid
+  old_value   Json?    @db.JsonB
+  new_value   Json?    @db.JsonB
+  ip_address  String?  @db.Inet
+  created_at  DateTime @default(now()) @db.Timestamptz(6)
+
+  business Business @relation(fields: [business_id], references: [id], onDelete: Cascade)
+  user     User?    @relation(fields: [user_id], references: [id])
+
+  @@index([business_id, created_at])
+  @@index([entity_type, entity_id])
+  @@map("audit_logs")
+}
+
+// Penomoran dokumen atomik (struk, PO, transfer) per outlet per hari
+// Hindari race condition dua kasir bikin nomor struk sama.
+// Penggunaan (di dalam satu transaksi DB):
+//   UPDATE document_counters SET last_number = last_number + 1
+//   WHERE ... RETURNING last_number;
+model DocumentCounter {
+  business_id String   @db.Uuid
+  outlet_id   String   @db.Uuid
+  doc_type    String   @db.VarChar(30) // 'transaction', 'po', 'transfer', 'booking'
+  period      DateTime @db.Date // reset harian
+  last_number Int      @default(0)
+
+  business Business @relation(fields: [business_id], references: [id], onDelete: Cascade)
+  outlet   Outlet   @relation(fields: [outlet_id], references: [id], onDelete: Cascade)
+
+  @@id([business_id, outlet_id, doc_type, period])
+  @@map("document_counters")
+}
+
+// =====================================================================
+// 17. VIEW LAPORAN SIAP PAKAI
+// Dibuat via raw SQL migration (CREATE VIEW), diekspos di sini untuk query
+// type-safe lewat Prisma Client (previewFeature "views").
+// =====================================================================
+
+/// Ringkasan penjualan harian per outlet
+view v_daily_sales {
+  business_id       String   @db.Uuid
+  outlet_id         String   @db.Uuid
+  sales_date        DateTime @db.Date
+  transaction_count BigInt
+  gross_sales       Decimal  @db.Decimal
+  total_discounts   Decimal  @db.Decimal
+  total_taxes       Decimal  @db.Decimal
+  gross_profit      Decimal  @db.Decimal
+
+  @@map("v_daily_sales")
+}
+
+/// Item terlaris
+view v_top_items {
+  business_id        String  @db.Uuid
+  outlet_id          String  @db.Uuid
+  item_id            String? @db.Uuid
+  item_name_snapshot String  @db.VarChar(150)
+  total_qty          Decimal @db.Decimal
+  total_revenue      Decimal @db.Decimal
+
+  @@map("v_top_items")
+}
+
+/// Stok menipis
+view v_low_stock {
+  outlet_id        String   @db.Uuid
+  business_id      String   @db.Uuid
+  item_name        String   @db.VarChar(150)
+  variant_name     String?  @db.VarChar(100)
+  quantity_on_hand Decimal  @db.Decimal(14, 3)
+  reorder_level    Decimal? @db.Decimal(14, 3)
+
+  @@map("v_low_stock")
+}
+
+/// Piutang pelanggan yang masih outstanding
+view v_outstanding_receivables {
+  business_id    String    @db.Uuid
+  customer_name  String?   @db.VarChar(150)
+  customer_phone String?   @db.VarChar(30)
+  remaining      Decimal   @db.Decimal
+  due_date       DateTime? @db.Date
+  created_at     DateTime  @db.Timestamptz(6)
+
+  @@map("v_outstanding_receivables")
+}

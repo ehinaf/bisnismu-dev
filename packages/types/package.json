@@ -1,0 +1,14 @@
+{
+  "name": "@bisnismu/types",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Shared TypeScript types untuk BisnisMu",
+  "main": "index.ts",
+  "types": "index.ts",
+  "scripts": {
+    "build": "echo \"@bisnismu/types: belum ada build step\" && exit 0",
+    "test": "echo \"@bisnismu/types: no tests yet\" && exit 0",
+    "lint": "echo \"@bisnismu/types: no lint config yet\" && exit 0",
+    "typecheck": "echo \"@bisnismu/types: no tsconfig yet\" && exit 0"
+  }
+}

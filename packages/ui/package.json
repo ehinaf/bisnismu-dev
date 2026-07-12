@@ -1,0 +1,17 @@
+{
+  "name": "@bisnismu/ui",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Shared UI components untuk BisnisMu",
+  "main": "index.ts",
+  "types": "index.ts",
+  "scripts": {
+    "build": "echo \"@bisnismu/ui: belum ada build step\" && exit 0",
+    "test": "echo \"@bisnismu/ui: no tests yet\" && exit 0",
+    "lint": "echo \"@bisnismu/ui: no lint config yet\" && exit 0",
+    "typecheck": "echo \"@bisnismu/ui: no tsconfig yet\" && exit 0"
+  },
+  "dependencies": {
+    "@bisnismu/types": "workspace:*"
+  }
+}

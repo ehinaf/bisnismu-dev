@@ -1,0 +1,17 @@
+{
+  "name": "@bisnismu/api",
+  "version": "0.0.1",
+  "private": true,
+  "description": "BisnisMu backend API (NestJS + Prisma)",
+  "scripts": {
+    "dev": "echo \"@bisnismu/api: NestJS belum di-scaffold\" && exit 0",
+    "build": "echo \"@bisnismu/api: NestJS belum di-scaffold\" && exit 0",
+    "test": "echo \"@bisnismu/api: no tests yet\" && exit 0",
+    "lint": "echo \"@bisnismu/api: no lint config yet\" && exit 0",
+    "typecheck": "echo \"@bisnismu/api: no tsconfig yet\" && exit 0"
+  },
+  "dependencies": {
+    "@bisnismu/db": "workspace:*",
+    "@bisnismu/types": "workspace:*"
+  }
+}
