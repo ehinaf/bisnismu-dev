@@ -40,6 +40,7 @@ function buildMockTx(overrides: Record<string, unknown> = {}) {
     },
     itemVariant: { findFirst: jest.fn().mockResolvedValue(null) },
     outletItemPrice: { findUnique: jest.fn().mockResolvedValue(null) },
+    priceTier: { findFirst: jest.fn().mockResolvedValue(null) },
     tax: { findMany: jest.fn().mockResolvedValue([]) },
     paymentChannel: {
       findFirst: jest.fn().mockResolvedValue({
@@ -214,5 +215,71 @@ describe("SalesService", () => {
     await run(dto, mockTx);
     expect(mockTx.$queryRaw).not.toHaveBeenCalled();
     expect(mockTx.inventory.update).not.toHaveBeenCalled();
+  });
+
+  describe("pricing_type='open'", () => {
+    const openItem = {
+      id: "item-open",
+      business_id: "biz-1",
+      name: "Jasa Custom",
+      item_type: "service",
+      pricing_type: "open",
+      track_stock: false,
+      use_recipe: false,
+      base_price: new Prisma.Decimal(0),
+      cost_price: new Prisma.Decimal(0),
+    };
+
+    it("menolak jika unit_price tidak diberikan", async () => {
+      const mockTx = buildMockTx({ item: { findFirst: jest.fn().mockResolvedValue(openItem), findUniqueOrThrow: jest.fn() } });
+      const dto: CreateTransactionDto = {
+        outlet_id: "outlet-1",
+        items: [{ item_id: "item-open", quantity: 1 }],
+        payments: [{ payment_channel_id: "channel-1", amount: 1 }],
+      };
+      await expect(run(dto, mockTx)).rejects.toThrow(BadRequestException);
+    });
+
+    it("memakai unit_price dari client apa adanya", async () => {
+      const mockTx = buildMockTx({ item: { findFirst: jest.fn().mockResolvedValue(openItem), findUniqueOrThrow: jest.fn() } });
+      const dto: CreateTransactionDto = {
+        outlet_id: "outlet-1",
+        items: [{ item_id: "item-open", quantity: 1, unit_price: 75000 }],
+        payments: [{ payment_channel_id: "channel-1", amount: 75000 }],
+      };
+      await run(dto, mockTx);
+      const createArgs = mockTx.transaction.create.mock.calls[0][0].data;
+      expect(createArgs.subtotal.toNumber()).toBe(75000);
+    });
+  });
+
+  describe("harga tier grosir", () => {
+    it("memakai harga tier langsung (bukan tambahan) saat quantity cocok", async () => {
+      const mockTx = buildMockTx({
+        priceTier: {
+          findFirst: jest.fn().mockResolvedValue({ id: "tier-1", price: new Prisma.Decimal(17000) }),
+        },
+      });
+      const dto: CreateTransactionDto = {
+        outlet_id: "outlet-1",
+        items: [{ item_id: "item-1", quantity: 12 }],
+        payments: [{ payment_channel_id: "channel-1", amount: 204000 }],
+      };
+      await run(dto, mockTx);
+      const createArgs = mockTx.transaction.create.mock.calls[0][0].data;
+      expect(createArgs.subtotal.toNumber()).toBe(204000); // 17000 * 12, bukan 20000 (base_price) * 12
+    });
+
+    it("jatuh ke base_price kalau tidak ada tier yang cocok", async () => {
+      const mockTx = buildMockTx(); // priceTier.findFirst default resolve null
+      const dto: CreateTransactionDto = {
+        outlet_id: "outlet-1",
+        items: [{ item_id: "item-1", quantity: 1 }],
+        payments: [{ payment_channel_id: "channel-1", amount: 20000 }],
+      };
+      await run(dto, mockTx);
+      const createArgs = mockTx.transaction.create.mock.calls[0][0].data;
+      expect(createArgs.subtotal.toNumber()).toBe(20000);
+    });
   });
 });

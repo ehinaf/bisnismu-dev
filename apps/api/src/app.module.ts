@@ -11,6 +11,7 @@ import { CashdrawerModule } from "./modules/cashdrawer/cashdrawer.module";
 import { InventoryModule } from "./modules/inventory/inventory.module";
 import { ReportModule } from "./modules/report/report.module";
 import { ExpenseModule } from "./modules/expense/expense.module";
+import { CustomerModule } from "./modules/customer/customer.module";
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { ExpenseModule } from "./modules/expense/expense.module";
     InventoryModule,
     ReportModule,
     ExpenseModule,
+    CustomerModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })

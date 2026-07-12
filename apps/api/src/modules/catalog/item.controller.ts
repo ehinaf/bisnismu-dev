@@ -6,10 +6,13 @@ import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import type { JwtPayload } from "../../common/interfaces/jwt-payload.interface";
 import { ItemService } from "./item.service";
 import { VariantService } from "./variant.service";
+import { PriceTierService } from "./price-tier.service";
 import { CreateItemDto } from "./dto/create-item.dto";
 import { UpdateItemDto } from "./dto/update-item.dto";
 import { CreateVariantDto } from "./dto/create-variant.dto";
 import { UpdateVariantDto } from "./dto/update-variant.dto";
+import { CreatePriceTierDto } from "./dto/create-price-tier.dto";
+import { UpdatePriceTierDto } from "./dto/update-price-tier.dto";
 
 @UseGuards(JwtAuthGuard)
 @Controller("catalog/items")
@@ -17,6 +20,7 @@ export class ItemController {
   constructor(
     private readonly itemService: ItemService,
     private readonly variantService: VariantService,
+    private readonly priceTierService: PriceTierService,
   ) {}
 
   @Get()
@@ -79,5 +83,29 @@ export class ItemController {
   @Delete(":id/variants/:variantId")
   removeVariant(@CurrentUser() user: JwtPayload, @Param("id") id: string, @Param("variantId") variantId: string) {
     return this.variantService.softDelete(user.business_id, id, variantId);
+  }
+
+  @Get(":id/price-tiers")
+  listPriceTiers(@CurrentUser() user: JwtPayload, @Param("id") id: string) {
+    return this.priceTierService.list(user.business_id, id);
+  }
+
+  @UseGuards(RolesGuard)
+  @Roles("owner", "admin", "manager")
+  @Post(":id/price-tiers")
+  createPriceTier(@CurrentUser() user: JwtPayload, @Param("id") id: string, @Body() dto: CreatePriceTierDto) {
+    return this.priceTierService.create(user.business_id, id, dto);
+  }
+
+  @UseGuards(RolesGuard)
+  @Roles("owner", "admin", "manager")
+  @Patch(":id/price-tiers/:tierId")
+  updatePriceTier(
+    @CurrentUser() user: JwtPayload,
+    @Param("id") id: string,
+    @Param("tierId") tierId: string,
+    @Body() dto: UpdatePriceTierDto,
+  ) {
+    return this.priceTierService.update(user.business_id, id, tierId, dto);
   }
 }

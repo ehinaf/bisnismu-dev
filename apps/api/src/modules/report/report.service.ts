@@ -21,6 +21,13 @@ export class ReportService {
     };
   }
 
+  receivables(business_id: string) {
+    return this.prisma.v_outstanding_receivables.findMany({
+      where: { business_id },
+      orderBy: { due_date: "asc" },
+    });
+  }
+
   async dailySales(business_id: string, query: DateRangeQueryDto) {
     await this.assertOutletInBusiness(business_id, query.outlet_id);
     const salesDate = this.dateRange(query.from, query.to);

@@ -6,9 +6,10 @@ import { UnitService } from "./unit.service";
 import { ItemController } from "./item.controller";
 import { ItemService } from "./item.service";
 import { VariantService } from "./variant.service";
+import { PriceTierService } from "./price-tier.service";
 
 @Module({
   controllers: [CategoryController, UnitController, ItemController],
-  providers: [CategoryService, UnitService, ItemService, VariantService],
+  providers: [CategoryService, UnitService, ItemService, VariantService, PriceTierService],
 })
 export class CatalogModule {}

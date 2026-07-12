@@ -82,22 +82,48 @@ export class SalesService {
 
           const quantity = new Prisma.Decimal(line.quantity);
 
-          // Override harga per outlet hanya berlaku untuk kombinasi item+variant
-          // (outlet_item_prices.variant_id NOT NULL di skema — keterbatasan desain asli).
+          // Resolusi harga, dalam urutan prioritas:
+          // 1. pricing_type='open' → harga manual dari kasir (SATU-SATUNYA kasus
+          //    di mana harga dari client dipercaya — itu memang desainnya).
+          // 2. Tier harga grosir yang cocok dengan quantity baris ini (harga final,
+          //    bukan tambahan atas base_price).
+          // 3. Override harga per outlet — hanya berlaku untuk kombinasi item+variant
+          //    (outlet_item_prices.variant_id NOT NULL di skema — keterbatasan desain asli).
+          // 4. base_price (+ price_adjustment varian kalau ada).
           let unitPrice: Prisma.Decimal;
-          if (variant) {
-            const override = await tx.outletItemPrice.findUnique({
-              where: {
-                outlet_id_item_id_variant_id: {
-                  outlet_id: dto.outlet_id,
-                  item_id: item.id,
-                  variant_id: variant.id,
-                },
-              },
-            });
-            unitPrice = override ? override.price : new Prisma.Decimal(item.base_price).plus(variant.price_adjustment);
+
+          if (item.pricing_type === "open") {
+            if (line.unit_price === undefined) {
+              throw new BadRequestException(`Item "${item.name}" memerlukan harga manual (pricing_type: open)`);
+            }
+            unitPrice = new Prisma.Decimal(line.unit_price);
           } else {
-            unitPrice = new Prisma.Decimal(item.base_price);
+            const tier = await tx.priceTier.findFirst({
+              where: {
+                item_id: item.id,
+                variant_id: variant?.id ?? null,
+                min_qty: { lte: quantity },
+                OR: [{ max_qty: null }, { max_qty: { gte: quantity } }],
+              },
+              orderBy: { min_qty: "desc" },
+            });
+
+            if (tier) {
+              unitPrice = tier.price;
+            } else if (variant) {
+              const override = await tx.outletItemPrice.findUnique({
+                where: {
+                  outlet_id_item_id_variant_id: {
+                    outlet_id: dto.outlet_id,
+                    item_id: item.id,
+                    variant_id: variant.id,
+                  },
+                },
+              });
+              unitPrice = override ? override.price : new Prisma.Decimal(item.base_price).plus(variant.price_adjustment);
+            } else {
+              unitPrice = new Prisma.Decimal(item.base_price);
+            }
           }
 
           const unitCost = variant

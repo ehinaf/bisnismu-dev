@@ -34,6 +34,11 @@ export class ReportController {
     return this.reportService.profitLoss(user.business_id, query);
   }
 
+  @Get("receivables")
+  receivables(@CurrentUser() user: JwtPayload) {
+    return this.reportService.receivables(user.business_id);
+  }
+
   @Get("daily-sales/export")
   async exportDailySales(@CurrentUser() user: JwtPayload, @Query() query: DateRangeQueryDto, @Res() res: Response) {
     const csv = await this.reportService.exportDailySalesCsv(user.business_id, query);
