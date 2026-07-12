@@ -138,3 +138,38 @@ export interface ProfitLossSummary {
   total_expenses: string;
   net_profit: string;
 }
+
+export interface Customer {
+  id: string;
+  name: string | null;
+  phone: string | null;
+  email: string | null;
+  address: string | null;
+  birthday: string | null;
+  loyalty_points: number;
+  total_spent: string;
+  visit_count: number;
+  credit_limit: string;
+  notes: string | null;
+}
+
+export type ReceivableStatus = "outstanding" | "partially_paid" | "paid" | "written_off";
+
+export interface ReceivablePayment {
+  id: string;
+  amount: string;
+  payment_method: string;
+  paid_at: string;
+  notes: string | null;
+}
+
+export interface CustomerReceivable {
+  id: string;
+  transaction_id: string | null;
+  amount: string;
+  amount_paid: string;
+  status: ReceivableStatus;
+  due_date: string | null;
+  created_at: string;
+  payments: ReceivablePayment[];
+}

@@ -51,6 +51,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               </NavLink>
             )}
             {canManage && (
+              <NavLink href="/customers" active={pathname.startsWith("/customers")}>
+                Pelanggan
+              </NavLink>
+            )}
+            {canManage && (
               <NavLink href="/reports" active={pathname === "/reports"}>
                 Laporan
               </NavLink>
