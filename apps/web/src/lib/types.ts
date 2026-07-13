@@ -153,6 +153,29 @@ export interface Customer {
   notes: string | null;
 }
 
+export type CashFlowType = "cash_in" | "cash_out";
+
+export interface CashDrawerMovement {
+  id: string;
+  flow_type: CashFlowType;
+  amount: string;
+  reason: string;
+  created_at: string;
+}
+
+export interface CashDrawerSession {
+  id: string;
+  outlet_id: string;
+  status: "open" | "closed";
+  opening_balance: string;
+  closing_balance: string | null;
+  expected_balance: string | null;
+  opened_at: string;
+  closed_at: string | null;
+  notes: string | null;
+  movements?: CashDrawerMovement[];
+}
+
 export type ReceivableStatus = "outstanding" | "partially_paid" | "paid" | "written_off";
 
 export interface ReceivablePayment {

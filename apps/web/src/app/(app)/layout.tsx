@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { getToken } from "@/lib/auth";
 import { apiClient } from "@/lib/api-client";
 import { useOutletStore } from "@/lib/stores/outlet-store";
+import { useOpenOrdersCount } from "@/lib/hooks/use-open-orders-count";
 import { Sidebar } from "@/components/shell/sidebar";
 import { Topbar } from "@/components/shell/topbar";
 import { MobileSidebar } from "@/components/shell/mobile-sidebar";
@@ -15,6 +16,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const setOutlets = useOutletStore((s) => s.setOutlets);
+  const { count: openOrdersCount } = useOpenOrdersCount();
 
   useEffect(() => {
     if (!getToken()) {
@@ -35,8 +37,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-screen lg:pl-[210px]">
-      <Sidebar />
-      <MobileSidebar open={menuOpen} onClose={() => setMenuOpen(false)} />
+      <Sidebar openOrdersCount={openOrdersCount} />
+      <MobileSidebar open={menuOpen} onClose={() => setMenuOpen(false)} openOrdersCount={openOrdersCount} />
       <div className="flex min-h-screen flex-col">
         <Topbar onOpenMenu={() => setMenuOpen(true)} />
         <main className="flex flex-1 flex-col">{children}</main>
