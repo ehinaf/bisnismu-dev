@@ -4,6 +4,7 @@
  * Tidak masuk CI (belum ada service Postgres di GitHub Actions).
  */
 import { randomUUID } from "node:crypto";
+import { BadRequestException, ConflictException } from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service";
 import { zonedParts } from "../../common/utils/business-time";
 import { CashdrawerService } from "../cashdrawer/cashdrawer.service";
@@ -488,5 +489,233 @@ describe("SalesService (integration)", () => {
       await prisma.tax.update({ where: { id: tax.id }, data: { is_active: false } });
       await prisma.discount.update({ where: { id: discount.id }, data: { is_active: false } });
     }
+  });
+  // ===================================================================
+  // Void & batal open bill (Sprint 2)
+  // ===================================================================
+
+  const actor = () => ({ userId: cashierId, ip: "127.0.0.1" });
+
+  it("void penjualan: stok item & bahan resep kembali, laci tidak menghitungnya, pelanggan & poin dibalik, audit tercatat", async () => {
+    const voidOutlet = await prisma.outlet.create({ data: { business_id: businessId, name: "Outlet Void" } });
+    const ingredient = await createItemWithStock("Bahan Resep Void", 100, 1000, voidOutlet.id);
+    const plain = await createItemWithStock("Item Void", 10, 20000, voidOutlet.id);
+    const recipeItem = await prisma.item.create({
+      data: { business_id: businessId, name: "Menu Resep Void", base_price: 30000, use_recipe: true, track_stock: false },
+    });
+    await prisma.recipe.create({ data: { item_id: recipeItem.id, ingredient_item_id: ingredient.id, quantity_used: 3 } });
+    const customer = await prisma.customer.create({ data: { business_id: businessId, name: "Pelanggan Void" } });
+    await prisma.businessSetting.upsert({
+      where: { business_id: businessId },
+      create: { business_id: businessId, enable_loyalty: true },
+      update: { enable_loyalty: true },
+    });
+    await prisma.loyaltyProgram.upsert({
+      where: { business_id: businessId },
+      create: { business_id: businessId, points_per_amount: 10000 },
+      update: { is_active: true, points_per_amount: 10000 },
+    });
+    const session = await drawer.open(businessId, cashierId, { outlet_id: voidOutlet.id, opening_balance: 100000 });
+    try {
+      const sale = await service.createTransaction(businessId, cashierId, {
+        outlet_id: voidOutlet.id,
+        customer_id: customer.id,
+        items: [
+          { item_id: plain.id, quantity: 2 },
+          { item_id: recipeItem.id, quantity: 1 },
+        ],
+        payments: [{ payment_channel_id: paymentChannelId, amount: 100000 }],
+      });
+      expect(await stockOf(plain.id, voidOutlet.id)).toBe(8);
+      expect(await stockOf(ingredient.id, voidOutlet.id)).toBe(97);
+      expect((await prisma.customer.findUniqueOrThrow({ where: { id: customer.id } })).loyalty_points).toBe(7);
+
+      const voided = await service.voidTransaction(businessId, sale.id, "Salah input pesanan", actor());
+      expect(voided.status).toBe("void");
+      expect(voided.void_reason).toBe("Salah input pesanan");
+      expect(voided.voided_by).toBe(cashierId);
+      expect(await stockOf(plain.id, voidOutlet.id)).toBe(10);
+      expect(await stockOf(ingredient.id, voidOutlet.id)).toBe(100);
+
+      const restored = await prisma.customer.findUniqueOrThrow({ where: { id: customer.id } });
+      expect(restored.total_spent.toNumber()).toBe(0);
+      expect(restored.visit_count).toBe(0);
+      expect(restored.loyalty_points).toBe(0);
+
+      const audit = await prisma.auditLog.findMany({ where: { entity_type: "transaction", entity_id: sale.id } });
+      expect(audit).toHaveLength(1);
+      expect(audit[0].action).toBe("void_transaction");
+      expect(audit[0].user_id).toBe(cashierId);
+
+      // Penjualan 70.000 dibayar 100.000 (kembalian 30.000) sudah di-void → laci tetap modal awal.
+      const closed = await drawer.close(businessId, cashierId, session.id, { closing_balance: 100000 });
+      expect(closed.expected_balance!.toNumber()).toBe(100000);
+    } finally {
+      await prisma.businessSetting.update({ where: { business_id: businessId }, data: { enable_loyalty: false } });
+    }
+  });
+
+  it("void ditolak setelah shift laci transaksi itu ditutup; stok tidak berubah", async () => {
+    const shiftOutlet = await prisma.outlet.create({ data: { business_id: businessId, name: "Outlet Void Shift" } });
+    const item = await createItemWithStock("Item Void Shift", 10, 10000, shiftOutlet.id);
+    const session = await drawer.open(businessId, cashierId, { outlet_id: shiftOutlet.id, opening_balance: 0 });
+    const sale = await service.createTransaction(businessId, cashierId, {
+      outlet_id: shiftOutlet.id,
+      items: [{ item_id: item.id, quantity: 1 }],
+      payments: [{ payment_channel_id: paymentChannelId, amount: 10000 }],
+    });
+    await drawer.close(businessId, cashierId, session.id, { closing_balance: 10000 });
+
+    await expect(service.voidTransaction(businessId, sale.id, "Terlambat", actor())).rejects.toThrow(ConflictException);
+    expect(await stockOf(item.id, shiftOutlet.id)).toBe(9);
+    expect((await prisma.transaction.findUniqueOrThrow({ where: { id: sale.id } })).status).toBe("completed");
+  });
+
+  it("batal open bill: stok dari open & tambah pesanan kembali, meja tersedia lagi", async () => {
+    const table = await prisma.diningTable.create({ data: { outlet_id: outletId, name: `Meja Void ${Date.now()}` } });
+    const item = await createItemWithStock("Item Bill Void", 10);
+    const bill = await service.openBill(businessId, cashierId, {
+      outlet_id: outletId,
+      dining_table_id: table.id,
+      items: [{ item_id: item.id, quantity: 3 }],
+    });
+    await service.addBillItems(businessId, cashierId, bill.id, { items: [{ item_id: item.id, quantity: 2 }] });
+    expect(await stockOf(item.id)).toBe(5);
+    expect((await prisma.diningTable.findUniqueOrThrow({ where: { id: table.id } })).status).toBe("occupied");
+
+    const cancelled = await service.voidTransaction(businessId, bill.id, "Tamu batal pesan", actor());
+    expect(cancelled.status).toBe("void");
+    expect(await stockOf(item.id)).toBe(10);
+    expect((await prisma.diningTable.findUniqueOrThrow({ where: { id: table.id } })).status).toBe("available");
+    expect((await service.listOpenBills(businessId, outletId)).some((b) => b.id === bill.id)).toBe(false);
+    const audit = await prisma.auditLog.findFirstOrThrow({ where: { entity_id: bill.id } });
+    expect(audit.action).toBe("cancel_open_bill");
+  });
+
+  it("void mengembalikan kuota voucher (usage_count & batas per pelanggan)", async () => {
+    const voucher = await prisma.voucher.create({
+      data: {
+        business_id: businessId,
+        code: `VOID${Date.now()}`.slice(0, 30),
+        discount_type: "fixed_amount",
+        value: 1000,
+        usage_limit: 5,
+        per_customer_limit: 1,
+      },
+    });
+    const customer = await prisma.customer.create({ data: { business_id: businessId, name: "Pelanggan Voucher Void" } });
+    const item = await createItemWithStock("Item Voucher Void", 10);
+    const saleWithVoucher = () =>
+      service.createTransaction(businessId, cashierId, {
+        outlet_id: outletId,
+        customer_id: customer.id,
+        voucher_code: voucher.code,
+        items: [{ item_id: item.id, quantity: 1 }],
+        payments: [{ payment_channel_id: paymentChannelId, amount: 9000 }],
+      });
+
+    const first = await saleWithVoucher();
+    await expect(saleWithVoucher()).rejects.toThrow(/sudah dipakai maksimal/);
+
+    await service.voidTransaction(businessId, first.id, "Voucher salah pelanggan", actor());
+    expect((await prisma.voucher.findUniqueOrThrow({ where: { id: voucher.id } })).usage_count).toBe(0);
+
+    await saleWithVoucher();
+    expect((await prisma.voucher.findUniqueOrThrow({ where: { id: voucher.id } })).usage_count).toBe(1);
+  });
+
+  it("void kasbon: belum dicicil → written_off; sudah dicicil → ditolak", async () => {
+    await prisma.businessSetting.upsert({
+      where: { business_id: businessId },
+      create: { business_id: businessId, enable_kasbon: true },
+      update: { enable_kasbon: true },
+    });
+    const customer = await prisma.customer.create({
+      data: { business_id: businessId, name: "Pelanggan Kasbon Void", credit_limit: 100000 },
+    });
+    const item = await createItemWithStock("Item Kasbon Void", 10);
+    const kasbonSale = () =>
+      service.createTransaction(businessId, cashierId, {
+        outlet_id: outletId,
+        customer_id: customer.id,
+        items: [{ item_id: item.id, quantity: 1 }],
+        payments: [{ payment_channel_id: paymentChannelId, amount: 10000, is_receivable: true }],
+      });
+
+    const unpaid = await kasbonSale();
+    await service.voidTransaction(businessId, unpaid.id, "Batal belanja", actor());
+    const writtenOff = await prisma.customerReceivable.findFirstOrThrow({ where: { transaction_id: unpaid.id } });
+    expect(writtenOff.status).toBe("written_off");
+
+    const paidPartly = await kasbonSale();
+    const receivable = await prisma.customerReceivable.findFirstOrThrow({ where: { transaction_id: paidPartly.id } });
+    await customers.addReceivablePayment(businessId, customer.id, receivable.id, cashierId, { amount: 4000 });
+    await expect(service.voidTransaction(businessId, paidPartly.id, "Batal", actor())).rejects.toThrow(/sudah dicicil/);
+    expect((await prisma.transaction.findUniqueOrThrow({ where: { id: paidPartly.id } })).status).toBe("completed");
+  });
+
+  it("konkurensi: 5 void paralel untuk transaksi yang sama → tepat 1 sukses, stok bertambah sekali", async () => {
+    const item = await createItemWithStock("Item Void Paralel", 10);
+    const sale = await service.createTransaction(businessId, cashierId, buildDto(item.id, 4, 40000));
+    await warmUpPool();
+
+    const results = await Promise.allSettled(
+      Array.from({ length: 5 }, () => service.voidTransaction(businessId, sale.id, "Void paralel", actor())),
+    );
+
+    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    const rejected = results.filter((r): r is PromiseRejectedResult => r.status === "rejected");
+    expect(rejected.every((r) => r.reason instanceof BadRequestException)).toBe(true);
+    expect(await stockOf(item.id)).toBe(10);
+    expect(await prisma.stockMovement.count({ where: { reference_id: sale.id, movement_type: "return_in" } })).toBe(1);
+    expect(await prisma.auditLog.count({ where: { entity_id: sale.id } })).toBe(1);
+  });
+
+  it("deadlock: void & penjualan baru paralel atas item yang sama (urutan berlawanan), berulang → tidak ada yang gagal", async () => {
+    const itemA = await createItemWithStock("Item Void Kunci A", 1000);
+    const itemB = await createItemWithStock("Item Void Kunci B", 1000);
+    const twoItems = (first: string, second: string): CreateTransactionDto => ({
+      outlet_id: outletId,
+      items: [
+        { item_id: first, quantity: 1 },
+        { item_id: second, quantity: 1 },
+      ],
+      payments: [{ payment_channel_id: paymentChannelId, amount: 20000 }],
+    });
+    const sales = [];
+    for (let i = 0; i < 10; i++) sales.push(await service.createTransaction(businessId, cashierId, twoItems(itemA.id, itemB.id)));
+    await warmUpPool();
+
+    const results = await Promise.allSettled(
+      sales.flatMap((sale) => [
+        service.voidTransaction(businessId, sale.id, "Uji kunci", actor()),
+        service.createTransaction(businessId, cashierId, twoItems(itemB.id, itemA.id)),
+      ]),
+    );
+
+    expect(rejectionMessages(results)).toEqual([]);
+    // 1000 − 10 (dijual) + 10 (void) − 10 (penjualan paralel) = 990
+    expect(await stockOf(itemA.id)).toBe(990);
+    expect(await stockOf(itemB.id)).toBe(990);
+  });
+
+  it("riwayat: daftar hari ini memuat penjualan selesai & void, tidak memuat open bill", async () => {
+    const historyOutlet = await prisma.outlet.create({ data: { business_id: businessId, name: "Outlet Riwayat" } });
+    const item = await createItemWithStock("Item Riwayat", 10, 10000, historyOutlet.id);
+    const sale = (qty: number) =>
+      service.createTransaction(businessId, cashierId, {
+        outlet_id: historyOutlet.id,
+        items: [{ item_id: item.id, quantity: qty }],
+        payments: [{ payment_channel_id: paymentChannelId, amount: qty * 10000 }],
+      });
+    const kept = await sale(1);
+    const voided = await sale(2);
+    await service.voidTransaction(businessId, voided.id, "Uji riwayat", actor());
+    await service.openBill(businessId, cashierId, { outlet_id: historyOutlet.id, items: [{ item_id: item.id, quantity: 1 }] });
+
+    const list = await service.listTransactions(businessId, historyOutlet.id);
+    expect(list.map((t) => t.id)).toEqual([voided.id, kept.id]);
+    expect(list[0].status).toBe("void");
+    expect(list[0].void_reason).toBe("Uji riwayat");
   });
 });

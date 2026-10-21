@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Ip, Param, Patch, Post, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
 import { RolesGuard } from "../../common/guards/roles.guard";
 import { Roles } from "../../common/decorators/roles.decorator";
@@ -45,8 +45,8 @@ export class ItemController {
   @UseGuards(RolesGuard)
   @Roles("owner", "admin", "manager")
   @Patch(":id")
-  update(@CurrentUser() user: JwtPayload, @Param("id") id: string, @Body() dto: UpdateItemDto) {
-    return this.itemService.update(user.business_id, id, dto);
+  update(@CurrentUser() user: JwtPayload, @Param("id") id: string, @Body() dto: UpdateItemDto, @Ip() ip: string) {
+    return this.itemService.update(user.business_id, id, dto, { userId: user.sub, ip });
   }
 
   @UseGuards(RolesGuard)

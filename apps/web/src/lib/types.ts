@@ -131,9 +131,13 @@ export interface PaymentDetail {
   amount: string;
 }
 
+export type TransactionStatus = "open" | "pending" | "completed" | "void" | "refunded" | "partially_refunded";
+
 export interface TransactionDetail {
   id: string;
   transaction_number: string;
+  status: TransactionStatus;
+  void_reason: string | null;
   subtotal: string;
   tax_total: string;
   service_charge_total: string;
@@ -144,6 +148,18 @@ export interface TransactionDetail {
   created_at: string;
   items: TransactionItemDetail[];
   payments: PaymentDetail[];
+}
+
+// Baris GET /transactions (halaman Riwayat).
+export interface TransactionHistoryRow {
+  id: string;
+  transaction_number: string;
+  status: TransactionStatus;
+  total: string;
+  created_at: string;
+  void_reason: string | null;
+  customer: { name: string | null } | null;
+  payments: Array<{ channel_name_snapshot: string; amount: string; is_receivable: boolean }>;
 }
 
 export interface DailySalesRow {

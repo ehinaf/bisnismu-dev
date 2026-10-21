@@ -8,6 +8,7 @@ import {
   Calculator,
   ChevronsUpDown,
   HelpCircle,
+  History,
   LayoutGrid,
   LogOut,
   Package,
@@ -35,6 +36,7 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { label: "Kasir", href: "/transactions", icon: Calculator },
+  { label: "Riwayat", href: "/history", icon: History },
   { label: "Meja / Order", href: "/tables", icon: LayoutGrid, badge: "open-orders" },
   { label: "Produk", href: "/catalog", icon: Package, managementOnly: true },
   { label: "Stok", href: "/stock", icon: Boxes, managementOnly: true },

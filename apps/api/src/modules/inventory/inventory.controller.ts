@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Ip, Post, Query, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
 import { RolesGuard } from "../../common/guards/roles.guard";
 import { Roles } from "../../common/decorators/roles.decorator";
@@ -31,7 +31,7 @@ export class InventoryController {
   @UseGuards(RolesGuard)
   @Roles("owner", "admin", "manager")
   @Post("adjust")
-  adjust(@CurrentUser() user: JwtPayload, @Body() dto: AdjustInventoryDto) {
-    return this.inventoryService.adjust(user.business_id, user.sub, dto);
+  adjust(@CurrentUser() user: JwtPayload, @Body() dto: AdjustInventoryDto, @Ip() ip: string) {
+    return this.inventoryService.adjust(user.business_id, user.sub, dto, ip);
   }
 }

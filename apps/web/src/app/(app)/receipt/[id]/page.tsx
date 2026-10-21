@@ -3,11 +3,15 @@
 import { Suspense, use, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { ChevronLeft, Printer, Share2 } from "lucide-react";
+import { Ban, ChevronLeft, Printer, Share2 } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { VoidDialog } from "@/components/pos/void-dialog";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { apiClient, ApiError } from "@/lib/api-client";
 import { formatCurrency } from "@/lib/format";
+import { PERMISSIONS, usePermissions } from "@/lib/hooks/use-permissions";
+import { toast } from "@/lib/stores/toast-store";
 import type { TransactionDetail } from "@/lib/types";
 
 export default function ReceiptPage(props: { params: Promise<{ id: string }> }) {
@@ -24,12 +28,19 @@ function ReceiptPageContent({ params }: { params: Promise<{ id: string }> }) {
   const [transaction, setTransaction] = useState<TransactionDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const autoActionDone = useRef(false);
+  const permissions = usePermissions();
+  const [voidOpen, setVoidOpen] = useState(false);
 
-  useEffect(() => {
+  function loadTransaction() {
     apiClient
       .get<TransactionDetail>(`/transactions/${id}`)
       .then(setTransaction)
       .catch((err) => setError(err instanceof ApiError ? err.message : "Gagal memuat struk."));
+  }
+
+  useEffect(() => {
+    loadTransaction();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
   function handleShareWhatsApp() {
@@ -60,8 +71,14 @@ function ReceiptPageContent({ params }: { params: Promise<{ id: string }> }) {
       </Link>
       <Card>
         <CardHeader>
-          <CardTitle>Struk {transaction.transaction_number}</CardTitle>
+          <div className="flex items-start justify-between gap-2">
+            <CardTitle>Struk {transaction.transaction_number}</CardTitle>
+            {transaction.status === "void" && <Badge variant="danger">DIBATALKAN</Badge>}
+          </div>
           <p className="text-xs text-muted-foreground">{new Date(transaction.created_at).toLocaleString("id-ID")}</p>
+          {transaction.status === "void" && transaction.void_reason && (
+            <p className="text-xs text-destructive">Alasan: {transaction.void_reason}</p>
+          )}
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
           <div className="flex flex-col gap-1 border-b border-border pb-3">
@@ -129,6 +146,32 @@ function ReceiptPageContent({ params }: { params: Promise<{ id: string }> }) {
           WhatsApp
         </Button>
       </div>
+
+      {transaction.status === "completed" && permissions?.includes(PERMISSIONS.VOID_TRANSACTION) && (
+        <>
+          <Button
+            variant="outline"
+            className="no-print border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
+            onClick={() => setVoidOpen(true)}
+          >
+            <Ban className="h-4 w-4" />
+            Batalkan Transaksi
+          </Button>
+          <VoidDialog
+            open={voidOpen}
+            transactionId={transaction.id}
+            title="Batalkan transaksi?"
+            description={`Stok, poin pelanggan, dan kuota voucher dari ${transaction.transaction_number} dikembalikan. Kembalikan pembayaran ${formatCurrency(transaction.total)} ke pembeli lewat metode yang sama.`}
+            confirmLabel="Batalkan Transaksi"
+            onClose={() => setVoidOpen(false)}
+            onVoided={() => {
+              setVoidOpen(false);
+              toast.success(`Transaksi ${transaction.transaction_number} dibatalkan.`);
+              loadTransaction();
+            }}
+          />
+        </>
+      )}
     </div>
   );
 }

@@ -1,7 +1,8 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import { Prisma, rounding_mode } from "@bisnismu/db";
 import { PrismaService } from "../../prisma/prisma.service";
-import { dateOnly, resolveTimeZone, zonedParts } from "../../common/utils/business-time";
+import { dateOnly, nextDate, resolveTimeZone, zonedDayStart, zonedParts } from "../../common/utils/business-time";
+import { AUDIT_ACTIONS, writeAuditLog, type AuditActor } from "../../common/audit/audit-log";
 import { CreateTransactionDto } from "./dto/create-transaction.dto";
 import { CreateTransactionItemDto } from "./dto/create-transaction-item.dto";
 import { CreateTransactionPaymentDto } from "./dto/create-transaction-payment.dto";
@@ -115,7 +116,9 @@ interface StockDeduction {
   item_name: string;
 }
 
-function compareStockKey(a: StockDeduction, b: StockDeduction): number {
+type StockKey = Pick<StockDeduction, "item_id" | "variant_id">;
+
+function compareStockKey(a: StockKey, b: StockKey): number {
   const keyA = `${a.item_id}:${a.variant_id ?? ""}`;
   const keyB = `${b.item_id}:${b.variant_id ?? ""}`;
   return keyA < keyB ? -1 : keyA > keyB ? 1 : 0;
@@ -567,6 +570,164 @@ export class SalesService {
       include: { items: true, dining_table: true },
       orderBy: { created_at: "asc" },
     });
+  }
+
+  /** Riwayat penjualan satu hari kalender usaha (default: hari ini), terbaru dulu. */
+  async listTransactions(businessId: string, outletId: string, date?: string) {
+    const outlet = await this.prisma.outlet.findFirst({ where: { id: outletId, business_id: businessId, deleted_at: null } });
+    if (!outlet) throw new NotFoundException("Outlet tidak ditemukan");
+
+    const timeZone = await this.businessTimeZone(this.prisma, businessId);
+    const day = date ?? zonedParts(new Date(), timeZone).date;
+    return this.prisma.transaction.findMany({
+      where: {
+        business_id: businessId,
+        outlet_id: outletId,
+        transaction_type: "sale",
+        status: { not: "open" },
+        created_at: { gte: zonedDayStart(day, timeZone), lt: zonedDayStart(nextDate(day), timeZone) },
+      },
+      select: {
+        id: true,
+        transaction_number: true,
+        status: true,
+        total: true,
+        created_at: true,
+        void_reason: true,
+        customer: { select: { name: true } },
+        payments: { select: { channel_name_snapshot: true, amount: true, is_receivable: true } },
+      },
+      orderBy: { created_at: "desc" },
+      take: 200,
+    });
+  }
+
+  // =====================================================================
+  // VOID — batalkan penjualan selesai (selama shift lacinya masih buka) atau
+  // open bill. Semua efek penjualan dibalik dalam satu transaksi DB: stok,
+  // voucher, kasbon, statistik & poin pelanggan, meja. Saldo laci dan laporan
+  // cukup mengabaikan status 'void' (keduanya hanya menghitung 'completed').
+  // =====================================================================
+
+  async voidTransaction(businessId: string, transactionId: string, reason: string, actor: AuditActor) {
+    return this.prisma.$transaction(
+      async (tx) => {
+        // Kunci baris transaksi: void ganda paralel, atau void yang balapan dengan
+        // closeBill/addBillItems, antre di sini dan melihat status terbaru.
+        const lockedRows = await tx.$queryRaw<
+          Array<{
+            id: string;
+            status: string;
+            transaction_type: string;
+            transaction_number: string;
+            cash_drawer_session_id: string | null;
+            customer_id: string | null;
+            dining_table_id: string | null;
+            total: Prisma.Decimal | string;
+          }>
+        >`
+          SELECT id, status, transaction_type, transaction_number, cash_drawer_session_id,
+                 customer_id, dining_table_id, total
+          FROM transactions
+          WHERE id = ${transactionId} AND business_id = ${businessId}
+          FOR UPDATE
+        `;
+        const locked = lockedRows[0];
+        if (!locked) throw new NotFoundException("Transaksi tidak ditemukan");
+        if (locked.transaction_type !== "sale") throw new BadRequestException("Hanya transaksi penjualan yang bisa dibatalkan");
+        if (locked.status !== "completed" && locked.status !== "open") {
+          throw new BadRequestException("Transaksi ini sudah dibatalkan atau di-refund");
+        }
+        const wasOpenBill = locked.status === "open";
+        const total = new Prisma.Decimal(locked.total);
+
+        // Void hanya selama uangnya masih di laci shift yang sama — saldo akhir shift
+        // yang sudah ditutup tidak boleh berubah diam-diam (transaksi shift lalu → refund).
+        // FOR SHARE: tutup laci paralel (FOR NO KEY UPDATE) menunggu void ini selesai.
+        if (!wasOpenBill && locked.cash_drawer_session_id) {
+          const sessions = await tx.$queryRaw<Array<{ status: string }>>`
+            SELECT status FROM cash_drawer_sessions WHERE id = ${locked.cash_drawer_session_id} FOR SHARE
+          `;
+          if (sessions[0]?.status !== "open") {
+            throw new ConflictException("Shift laci transaksi ini sudah ditutup — gunakan refund");
+          }
+        }
+
+        // Kasbon yang sudah dicicil tidak bisa dihapus begitu saja (uang cicilan sudah masuk).
+        const receivables = await tx.$queryRaw<Array<{ id: string; amount_paid: Prisma.Decimal | string }>>`
+          SELECT id, amount_paid FROM customer_receivables WHERE transaction_id = ${transactionId} FOR UPDATE
+        `;
+        if (receivables.some((r) => new Prisma.Decimal(r.amount_paid).greaterThan(0))) {
+          throw new ConflictException("Kasbon transaksi ini sudah dicicil — tidak bisa dibatalkan");
+        }
+        if (receivables.length > 0) {
+          await tx.customerReceivable.updateMany({
+            where: { id: { in: receivables.map((r) => r.id) } },
+            data: { status: "written_off", notes: `Dibatalkan: void ${locked.transaction_number}` },
+          });
+        }
+
+        await this.restoreStockForTransaction(tx, transactionId, locked.transaction_number, actor.userId);
+
+        // Baris redemption disimpan sebagai riwayat; resolveVoucher tidak menghitung
+        // redemption milik transaksi void untuk batas per pelanggan.
+        const redemptions = await tx.voucherRedemption.findMany({
+          where: { transaction_id: transactionId },
+          select: { voucher_id: true },
+        });
+        for (const r of redemptions) {
+          await tx.voucher.update({ where: { id: r.voucher_id }, data: { usage_count: { decrement: 1 } } });
+        }
+
+        // Statistik & poin pelanggan hanya bertambah saat pembayaran (finalizePayment).
+        if (!wasOpenBill && locked.customer_id) {
+          await tx.customer.update({
+            where: { id: locked.customer_id },
+            data: { total_spent: { decrement: total }, visit_count: { decrement: 1 } },
+          });
+          const earned = await tx.loyaltyPointEntry.aggregate({
+            where: { transaction_id: transactionId, entry_type: "earn" },
+            _sum: { points: true },
+          });
+          const points = earned._sum.points ?? 0;
+          if (points > 0) {
+            await tx.customer.update({ where: { id: locked.customer_id }, data: { loyalty_points: { decrement: points } } });
+            await tx.loyaltyPointEntry.create({
+              data: {
+                customer_id: locked.customer_id,
+                entry_type: "adjustment",
+                points: -points,
+                transaction_id: transactionId,
+                notes: `Void ${locked.transaction_number}`,
+              },
+            });
+          }
+        }
+
+        if (wasOpenBill && locked.dining_table_id) {
+          await tx.diningTable.update({ where: { id: locked.dining_table_id }, data: { status: "available" } });
+        }
+
+        await tx.transaction.update({
+          where: { id: transactionId },
+          data: { status: "void", void_reason: reason, voided_by: actor.userId },
+        });
+
+        await writeAuditLog(tx, {
+          businessId,
+          userId: actor.userId,
+          action: wasOpenBill ? AUDIT_ACTIONS.CANCEL_OPEN_BILL : AUDIT_ACTIONS.VOID_TRANSACTION,
+          entityType: "transaction",
+          entityId: transactionId,
+          oldValue: { status: locked.status, total: total.toString(), transaction_number: locked.transaction_number },
+          newValue: { status: "void", reason },
+          ip: actor.ip,
+        });
+
+        return tx.transaction.findUniqueOrThrow({ where: { id: transactionId }, include: TRANSACTION_INCLUDE });
+      },
+      { maxWait: 10_000, timeout: 20_000 },
+    );
   }
 
   // =====================================================================
@@ -1031,7 +1192,8 @@ export class SalesService {
     }
     if (customerId && voucher.per_customer_limit > 0) {
       const usedByCustomer = await tx.voucherRedemption.count({
-        where: { voucher_id: voucher.id, customer_id: customerId },
+        // Redemption milik transaksi yang di-void tidak dihitung (kuota pelanggan kembali).
+        where: { voucher_id: voucher.id, customer_id: customerId, transaction: { status: { not: "void" } } },
       });
       if (usedByCustomer >= voucher.per_customer_limit) {
         throw new BadRequestException(`Voucher "${code}" sudah dipakai maksimal oleh pelanggan ini`);
@@ -1412,6 +1574,58 @@ export class SalesService {
     }
 
     return deductions;
+  }
+
+  /**
+   * Kembalikan stok sebuah transaksi dengan membalik stock_movements yang
+   * tercatat untuknya — persis yang dulu dipotong (bundle, resep, bahan
+   * modifier), tidak terpengaruh perubahan katalog sesudahnya.
+   *
+   * Kunci inventory diambil dalam urutan (item_id, variant_id) yang SAMA dengan
+   * reduceStockForItems, supaya void tidak deadlock dengan penjualan paralel
+   * yang menyentuh item yang sama.
+   */
+  private async restoreStockForTransaction(
+    tx: Prisma.TransactionClient,
+    transactionId: string,
+    transactionNumber: string,
+    userId: string,
+  ) {
+    const net = await tx.stockMovement.groupBy({
+      by: ["inventory_id"],
+      where: { reference_type: "transaction", reference_id: transactionId },
+      _sum: { quantity: true },
+    });
+    const inventories = await tx.inventory.findMany({
+      where: { id: { in: net.map((n) => n.inventory_id) } },
+      select: { id: true, item_id: true, variant_id: true },
+    });
+    inventories.sort(compareStockKey);
+
+    for (const inventory of inventories) {
+      // Jumlah movement tercatat negatif (keluar); yang dikembalikan = kebalikannya.
+      const quantityOut = new Prisma.Decimal(net.find((n) => n.inventory_id === inventory.id)?._sum.quantity ?? 0).negated();
+      if (quantityOut.lessThanOrEqualTo(0)) continue;
+
+      const rows = await tx.$queryRaw<InventoryLockRow[]>`
+        SELECT id, quantity_on_hand FROM inventory WHERE id = ${inventory.id} FOR UPDATE
+      `;
+      await tx.inventory.update({
+        where: { id: inventory.id },
+        data: { quantity_on_hand: new Prisma.Decimal(rows[0].quantity_on_hand).plus(quantityOut) },
+      });
+      await tx.stockMovement.create({
+        data: {
+          inventory_id: inventory.id,
+          movement_type: "return_in",
+          quantity: quantityOut,
+          reference_type: "transaction",
+          reference_id: transactionId,
+          notes: `Void ${transactionNumber}`,
+          created_by: userId,
+        },
+      });
+    }
   }
 
   private async lockAndDecrementInventory(

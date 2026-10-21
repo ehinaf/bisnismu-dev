@@ -10,6 +10,7 @@ function buildMockTx(overrides: Record<string, unknown> = {}) {
     item: { findFirst: jest.fn().mockResolvedValue({ id: "item-1", business_id: "biz-1", name: "Beras" }) },
     inventory: { update: jest.fn().mockImplementation(({ data }) => Promise.resolve({ id: "inv-1", ...data })) },
     stockMovement: { create: jest.fn().mockResolvedValue({}) },
+    auditLog: { create: jest.fn().mockResolvedValue({}) },
     $queryRaw: jest.fn().mockResolvedValue([{ id: "inv-1", quantity_on_hand: new Prisma.Decimal(20) }]),
   };
   return { ...base, ...overrides } as any;
@@ -32,7 +33,7 @@ describe("InventoryService", () => {
 
   async function runAdjust(mockTx: ReturnType<typeof buildMockTx>, dto: Parameters<InventoryService["adjust"]>[2]) {
     prisma.$transaction.mockImplementation((fn: any) => fn(mockTx));
-    return service.adjust("biz-1", "user-1", dto);
+    return service.adjust("biz-1", "user-1", dto, "10.0.0.7");
   }
 
   it("menolak jika outlet bukan milik business", async () => {
@@ -63,6 +64,24 @@ describe("InventoryService", () => {
     expect(movementArgs.notes).toBe("stok opname");
   });
 
+  it("mencatat audit adjust_stock (stok lama → baru, alasan, IP) di transaksi yang sama", async () => {
+    const mockTx = buildMockTx();
+    await runAdjust(mockTx, { outlet_id: "outlet-1", item_id: "item-1", new_quantity: 35, reason: "stok opname" });
+
+    expect(mockTx.auditLog.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        business_id: "biz-1",
+        user_id: "user-1",
+        action: "adjust_stock",
+        entity_type: "inventory",
+        entity_id: "inv-1",
+        old_value: { quantity_on_hand: "20" },
+        new_value: { quantity_on_hand: "35", reason: "stok opname" },
+        ip_address: "10.0.0.7",
+      }),
+    });
+  });
+
   it("menghitung delta negatif dengan benar (koreksi turun)", async () => {
     const mockTx = buildMockTx();
     await runAdjust(mockTx, { outlet_id: "outlet-1", item_id: "item-1", new_quantity: 5, reason: "barang rusak" });
@@ -76,6 +95,7 @@ describe("InventoryService", () => {
     await runAdjust(mockTx, { outlet_id: "outlet-1", item_id: "item-1", new_quantity: 20, reason: "cek rutin" });
 
     expect(mockTx.stockMovement.create).not.toHaveBeenCalled();
+    expect(mockTx.auditLog.create).not.toHaveBeenCalled();
     expect(mockTx.inventory.update).toHaveBeenCalled();
   });
 });

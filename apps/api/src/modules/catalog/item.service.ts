@@ -1,5 +1,7 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
+import { Prisma } from "@bisnismu/db";
 import { PrismaService } from "../../prisma/prisma.service";
+import { AUDIT_ACTIONS, writeAuditLog, type AuditActor } from "../../common/audit/audit-log";
 import { CreateItemDto } from "./dto/create-item.dto";
 import { UpdateItemDto } from "./dto/update-item.dto";
 
@@ -41,9 +43,28 @@ export class ItemService {
     return item;
   }
 
-  async update(business_id: string, id: string, dto: UpdateItemDto) {
-    await this.getOne(business_id, id);
-    return this.prisma.item.update({ where: { id }, data: dto });
+  async update(business_id: string, id: string, dto: UpdateItemDto, actor: AuditActor | null = null) {
+    const existing = await this.getOne(business_id, id);
+    const changed = (next: number | undefined, current: Prisma.Decimal) =>
+      next !== undefined && !new Prisma.Decimal(next).equals(current);
+    const priceChanged = changed(dto.base_price, existing.base_price) || changed(dto.cost_price, existing.cost_price);
+    if (!priceChanged) return this.prisma.item.update({ where: { id }, data: dto });
+
+    // Ubah harga = aksi sensitif (CLAUDE.md #7): update & jejak audit dalam satu transaksi.
+    return this.prisma.$transaction(async (tx) => {
+      const item = await tx.item.update({ where: { id }, data: dto });
+      await writeAuditLog(tx, {
+        businessId: business_id,
+        userId: actor?.userId ?? null,
+        action: AUDIT_ACTIONS.UPDATE_ITEM_PRICE,
+        entityType: "item",
+        entityId: id,
+        oldValue: { base_price: existing.base_price.toString(), cost_price: existing.cost_price.toString() },
+        newValue: { base_price: item.base_price.toString(), cost_price: item.cost_price.toString() },
+        ip: actor?.ip,
+      });
+      return item;
+    });
   }
 
   async softDelete(business_id: string, id: string) {

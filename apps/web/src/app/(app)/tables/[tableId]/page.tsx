@@ -11,10 +11,13 @@ import { MoneyInput } from "@/components/ui/money-input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { PageHeader } from "@/components/ui/page-header";
+import { VoidDialog } from "@/components/pos/void-dialog";
 import { LayoutGrid } from "lucide-react";
 import { apiClient, ApiError } from "@/lib/api-client";
 import { formatCurrency } from "@/lib/format";
 import { useCheckoutQuote } from "@/lib/hooks/use-checkout-quote";
+import { PERMISSIONS, usePermissions } from "@/lib/hooks/use-permissions";
+import { toast } from "@/lib/stores/toast-store";
 import { checkPayments } from "@/lib/payment-rules";
 import { newClientRef } from "@/lib/utils";
 import type { CartItem } from "@/lib/stores/cart-store";
@@ -63,6 +66,8 @@ export default function TableBillPage({ params }: { params: Promise<{ tableId: s
   const [addingItems, setAddingItems] = useState(false);
 
   const [payingOpen, setPayingOpen] = useState(false);
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const permissions = usePermissions();
   const [channelId, setChannelId] = useState("");
   const [amountPaid, setAmountPaid] = useState("");
   // Idempotency key buka meja — dipakai ulang bila request diulang setelah gagal/putus.
@@ -288,9 +293,34 @@ export default function TableBillPage({ params }: { params: Promise<{ tableId: s
           )}
 
           {!payingOpen ? (
-            <Button size="lg" onClick={() => setPayingOpen(true)}>
-              Bayar
-            </Button>
+            <div className="flex flex-col gap-2">
+              <Button size="lg" onClick={() => setPayingOpen(true)}>
+                Bayar
+              </Button>
+              {bill && permissions?.includes(PERMISSIONS.VOID_TRANSACTION) && (
+                <>
+                  <Button
+                    variant="outline"
+                    className="border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                    onClick={() => setCancelOpen(true)}
+                  >
+                    Batalkan Bill
+                  </Button>
+                  <VoidDialog
+                    open={cancelOpen}
+                    transactionId={bill.id}
+                    title="Batalkan bill meja ini?"
+                    description="Semua pesanan di bill ini dibatalkan, stoknya dikembalikan, dan meja kembali tersedia."
+                    confirmLabel="Batalkan Bill"
+                    onClose={() => setCancelOpen(false)}
+                    onVoided={() => {
+                      toast.success(table ? `Bill ${table.name} dibatalkan.` : "Bill dibatalkan.");
+                      router.replace("/tables");
+                    }}
+                  />
+                </>
+              )}
+            </div>
           ) : (
             <Card>
               <CardHeader>

@@ -12,6 +12,7 @@ const PAGE_TITLES: Array<{ prefix: string; title: string; subtitle?: string }> =
   { prefix: "/dashboard", title: "Transaksi Penjualan", subtitle: "Kasir" },
   { prefix: "/transactions", title: "Transaksi Penjualan", subtitle: "Kasir" },
   { prefix: "/checkout", title: "Pembayaran", subtitle: "Kasir" },
+  { prefix: "/history", title: "Riwayat Transaksi" },
   { prefix: "/tables", title: "Meja / Order" },
   { prefix: "/catalog", title: "Kelola Produk" },
   { prefix: "/stock", title: "Stok" },

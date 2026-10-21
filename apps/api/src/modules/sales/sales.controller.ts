@@ -1,5 +1,8 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, HttpCode, HttpStatus, Ip, Param, ParseUUIDPipe, Post, Query, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
+import { PermissionsGuard } from "../../common/guards/permissions.guard";
+import { RequirePermission } from "../../common/decorators/require-permission.decorator";
+import { PERMISSIONS } from "../../common/permissions/permissions";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import type { JwtPayload } from "../../common/interfaces/jwt-payload.interface";
 import { SalesService } from "./sales.service";
@@ -9,6 +12,8 @@ import { AddBillItemsDto } from "./dto/add-bill-items.dto";
 import { CloseBillDto } from "./dto/close-bill.dto";
 import { QuoteTransactionDto } from "./dto/quote-transaction.dto";
 import { QuoteBillDto } from "./dto/quote-bill.dto";
+import { ListTransactionsQueryDto } from "./dto/list-transactions-query.dto";
+import { VoidTransactionDto } from "./dto/void-transaction.dto";
 
 @UseGuards(JwtAuthGuard)
 @Controller("transactions")
@@ -40,6 +45,12 @@ export class SalesController {
     return this.salesService.openBill(user.business_id, user.sub, dto);
   }
 
+  // Riwayat penjualan satu hari (default hari ini) untuk halaman Riwayat.
+  @Get()
+  list(@CurrentUser() user: JwtPayload, @Query() query: ListTransactionsQueryDto) {
+    return this.salesService.listTransactions(user.business_id, query.outlet_id, query.date);
+  }
+
   @Get("open")
   listOpenBills(@CurrentUser() user: JwtPayload, @Query("outlet_id") outletId: string) {
     return this.salesService.listOpenBills(user.business_id, outletId);
@@ -61,6 +72,20 @@ export class SalesController {
   @HttpCode(HttpStatus.OK)
   quoteBill(@CurrentUser() user: JwtPayload, @Param("id") id: string, @Body() dto: QuoteBillDto) {
     return this.salesService.quoteBill(user.business_id, id, dto);
+  }
+
+  // Void penjualan selesai (shift lacinya masih buka) atau batalkan open bill.
+  @Post(":id/void")
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(PermissionsGuard)
+  @RequirePermission(PERMISSIONS.VOID_TRANSACTION)
+  voidTransaction(
+    @CurrentUser() user: JwtPayload,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body() dto: VoidTransactionDto,
+    @Ip() ip: string,
+  ) {
+    return this.salesService.voidTransaction(user.business_id, id, dto.reason, { userId: user.sub, ip });
   }
 
   @Post(":id/close")

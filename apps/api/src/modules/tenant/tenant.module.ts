@@ -9,9 +9,18 @@ import { DiningTableController } from "./dining-table.controller";
 import { DiningTableService } from "./dining-table.service";
 import { TaxController } from "./tax.controller";
 import { TaxService } from "./tax.service";
+import { UserPermissionController } from "./user-permission.controller";
+import { UserPermissionService } from "./user-permission.service";
 
 @Module({
-  controllers: [BusinessController, OutletController, PaymentChannelController, DiningTableController, TaxController],
-  providers: [BusinessService, OutletService, PaymentChannelService, DiningTableService, TaxService],
+  controllers: [
+    BusinessController,
+    OutletController,
+    PaymentChannelController,
+    DiningTableController,
+    TaxController,
+    UserPermissionController,
+  ],
+  providers: [BusinessService, OutletService, PaymentChannelService, DiningTableService, TaxService, UserPermissionService],
 })
 export class TenantModule {}

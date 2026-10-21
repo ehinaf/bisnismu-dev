@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@bisnismu/db";
 import { PrismaService } from "../../prisma/prisma.service";
+import { AUDIT_ACTIONS, writeAuditLog } from "../../common/audit/audit-log";
 import { AdjustInventoryDto } from "./dto/adjust-inventory.dto";
 
 interface InventoryLockRow {
@@ -50,7 +51,7 @@ export class InventoryService {
     });
   }
 
-  async adjust(business_id: string, userId: string, dto: AdjustInventoryDto) {
+  async adjust(business_id: string, userId: string, dto: AdjustInventoryDto, ip: string | null = null) {
     return this.prisma.$transaction(async (tx) => {
       const outlet = await tx.outlet.findFirst({ where: { id: dto.outlet_id, business_id, deleted_at: null } });
       if (!outlet) throw new NotFoundException("Outlet tidak ditemukan");
@@ -88,6 +89,16 @@ export class InventoryService {
             notes: dto.reason,
             created_by: userId,
           },
+        });
+        await writeAuditLog(tx, {
+          businessId: business_id,
+          userId,
+          action: AUDIT_ACTIONS.ADJUST_STOCK,
+          entityType: "inventory",
+          entityId: row.id,
+          oldValue: { quantity_on_hand: current.toString() },
+          newValue: { quantity_on_hand: newQuantity.toString(), reason: dto.reason },
+          ip,
         });
       }
 
