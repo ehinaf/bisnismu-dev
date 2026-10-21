@@ -5,6 +5,7 @@ import { apiClient } from "@/lib/api-client";
 
 export const PERMISSIONS = {
   VOID_TRANSACTION: "void_transaction",
+  REFUND_TRANSACTION: "refund_transaction",
 } as const;
 
 // Izin efektif dari server (GET /auth/me), hanya untuk menampilkan/menyembunyikan

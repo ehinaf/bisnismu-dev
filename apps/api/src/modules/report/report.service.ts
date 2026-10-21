@@ -4,6 +4,7 @@ import { PrismaService } from "../../prisma/prisma.service";
 import { nextDate, resolveTimeZone, zonedDayStart } from "../../common/utils/business-time";
 import { DateRangeQueryDto } from "./dto/date-range-query.dto";
 import { toCsv } from "./csv.util";
+import { COUNTED_STATUSES } from "../../common/utils/transaction-status";
 
 @Injectable()
 export class ReportService {
@@ -75,7 +76,7 @@ export class ReportService {
         transaction: {
           business_id,
           outlet_id: query.outlet_id,
-          status: "completed",
+          status: { in: COUNTED_STATUSES },
           ...(createdAt ? { created_at: createdAt } : {}),
         },
       },
@@ -102,7 +103,7 @@ export class ReportService {
         transaction: {
           business_id,
           outlet_id: query.outlet_id,
-          status: "completed",
+          status: { in: COUNTED_STATUSES },
           ...(createdAt ? { created_at: createdAt } : {}),
         },
       },

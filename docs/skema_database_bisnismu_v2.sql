@@ -778,9 +778,11 @@ CREATE TABLE transaction_items (
     line_discount       NUMERIC(14,2) DEFAULT 0,
     subtotal            NUMERIC(14,2) NOT NULL,
     is_refunded         BOOLEAN DEFAULT FALSE,
-    notes               TEXT                          -- "tanpa bawang", dsb
+    notes               TEXT,                         -- "tanpa bawang", dsb
+    refunded_item_id    UUID REFERENCES transaction_items(id)  -- baris refund → baris penjualan asli
 );
 CREATE INDEX idx_txn_items_transaction ON transaction_items(transaction_id);
+CREATE INDEX idx_txn_items_refunded_item ON transaction_items(refunded_item_id);
 CREATE INDEX idx_txn_items_item ON transaction_items(item_id);
 
 CREATE TABLE transaction_item_modifiers (
@@ -894,14 +896,16 @@ SELECT
     t.business_id,
     t.outlet_id,
     DATE(t.created_at AT TIME ZONE b.timezone) AS sales_date,   -- tanggal lokal usaha
-    COUNT(*)                          AS transaction_count,
+    -- Transaksi refund bernilai negatif dan ikut dijumlah → angka penjualan BERSIH;
+    -- jumlah transaksi tetap hanya menghitung penjualan.
+    COUNT(*) FILTER (WHERE t.transaction_type = 'sale') AS transaction_count,
     SUM(t.total)                      AS gross_sales,
     SUM(t.discount_total)             AS total_discounts,
     SUM(t.tax_total)                  AS total_taxes,
     SUM(t.total - t.total_cost)       AS gross_profit
 FROM transactions t
 JOIN businesses b ON b.id = t.business_id
-WHERE t.status = 'completed' AND t.transaction_type = 'sale'
+WHERE t.status IN ('completed', 'refunded', 'partially_refunded')
 GROUP BY t.business_id, t.outlet_id, DATE(t.created_at AT TIME ZONE b.timezone);
 
 -- Item terlaris

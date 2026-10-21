@@ -130,14 +130,16 @@ describe("CashdrawerService", () => {
       const updateArgs = prisma.cashDrawerSession.update.mock.calls[0][0];
       // 100000 (modal) + 300000 − 45000 = 355000
       expect((updateArgs.data.expected_balance as Prisma.Decimal).toNumber()).toBe(355000);
-      // Hanya transaksi completed di sesi ini yang dihitung.
+      // Transaksi yang uangnya nyata di sesi ini: completed + penjualan yang
+      // (sebagian) di-refund; refund (payment negatif) ikut mengurangi. Void/open tidak.
+      const counted = { in: ["completed", "refunded", "partially_refunded"] };
       expect(prisma.transaction.aggregate).toHaveBeenCalledWith({
-        where: { cash_drawer_session_id: "session-1", status: "completed" },
+        where: { cash_drawer_session_id: "session-1", status: counted },
         _sum: { change_due: true },
       });
       expect(prisma.payment.aggregate.mock.calls[0][0].where.transaction).toEqual({
         cash_drawer_session_id: "session-1",
-        status: "completed",
+        status: counted,
       });
     });
 

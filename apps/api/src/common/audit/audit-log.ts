@@ -4,6 +4,7 @@ import type { Prisma } from "@bisnismu/db";
 export const AUDIT_ACTIONS = {
   VOID_TRANSACTION: "void_transaction",
   CANCEL_OPEN_BILL: "cancel_open_bill",
+  REFUND_TRANSACTION: "refund_transaction",
   UPDATE_ITEM_PRICE: "update_item_price",
   ADJUST_STOCK: "adjust_stock",
   UPDATE_USER_PERMISSIONS: "update_user_permissions",

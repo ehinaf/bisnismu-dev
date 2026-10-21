@@ -5,6 +5,7 @@ import type { JwtPayload } from "../interfaces/jwt-payload.interface";
 // Kunci izin granular (tabel user_permissions) yang melengkapi role dasar.
 export const PERMISSIONS = {
   VOID_TRANSACTION: "void_transaction",
+  REFUND_TRANSACTION: "refund_transaction",
 } as const;
 
 export type PermissionKey = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];

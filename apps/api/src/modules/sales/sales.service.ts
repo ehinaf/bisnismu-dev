@@ -3,6 +3,7 @@ import { Prisma, rounding_mode } from "@bisnismu/db";
 import { PrismaService } from "../../prisma/prisma.service";
 import { dateOnly, nextDate, resolveTimeZone, zonedDayStart, zonedParts } from "../../common/utils/business-time";
 import { AUDIT_ACTIONS, writeAuditLog, type AuditActor } from "../../common/audit/audit-log";
+import { COUNTED_STATUSES } from "../../common/utils/transaction-status";
 import { CreateTransactionDto } from "./dto/create-transaction.dto";
 import { CreateTransactionItemDto } from "./dto/create-transaction-item.dto";
 import { CreateTransactionPaymentDto } from "./dto/create-transaction-payment.dto";
@@ -12,12 +13,28 @@ import { CloseBillDto } from "./dto/close-bill.dto";
 import { QuoteTransactionDto } from "./dto/quote-transaction.dto";
 import { QuoteBillDto } from "./dto/quote-bill.dto";
 import { applyRounding, roundMoney } from "./sales.pricing";
+import {
+  allocateRefund,
+  computeRefund,
+  type RefundableLine,
+  type RefundableTransaction,
+  type RefundComputation,
+  type RefundSelection,
+} from "./sales.refund";
+import { RefundQuoteDto, RefundTransactionDto } from "./dto/refund-transaction.dto";
 
 // Relasi yang dikembalikan setiap endpoint transaksi (create/open/addItems/close/getOne).
 const TRANSACTION_INCLUDE = {
   items: { include: { modifiers: true } },
   payments: true,
   taxes: true,
+  // Struk refund menaut ke penjualan asli; struk asli menampilkan daftar refund-nya.
+  reference_transaction: { select: { id: true, transaction_number: true } },
+  refund_transactions: {
+    where: { transaction_type: "refund" },
+    select: { id: true, transaction_number: true, total: true, created_at: true },
+    orderBy: { created_at: "asc" },
+  },
 } satisfies Prisma.TransactionInclude;
 
 type TransactionWithRelations = Prisma.TransactionGetPayload<{ include: typeof TRANSACTION_INCLUDE }>;
@@ -572,7 +589,7 @@ export class SalesService {
     });
   }
 
-  /** Riwayat penjualan satu hari kalender usaha (default: hari ini), terbaru dulu. */
+  /** Riwayat penjualan & refund satu hari kalender usaha (default: hari ini), terbaru dulu. */
   async listTransactions(businessId: string, outletId: string, date?: string) {
     const outlet = await this.prisma.outlet.findFirst({ where: { id: outletId, business_id: businessId, deleted_at: null } });
     if (!outlet) throw new NotFoundException("Outlet tidak ditemukan");
@@ -583,15 +600,16 @@ export class SalesService {
       where: {
         business_id: businessId,
         outlet_id: outletId,
-        transaction_type: "sale",
         status: { not: "open" },
         created_at: { gte: zonedDayStart(day, timeZone), lt: zonedDayStart(nextDate(day), timeZone) },
       },
       select: {
         id: true,
         transaction_number: true,
+        transaction_type: true,
         status: true,
         total: true,
+        reference_transaction: { select: { transaction_number: true } },
         created_at: true,
         void_reason: true,
         customer: { select: { name: true } },
@@ -728,6 +746,397 @@ export class SalesService {
       },
       { maxWait: 10_000, timeout: 20_000 },
     );
+  }
+
+  // =====================================================================
+  // REFUND — retur sebagian/penuh, juga untuk transaksi dari shift yang sudah
+  // ditutup. Refund = transaksi baru transaction_type='refund' bernilai
+  // NEGATIF yang menunjuk penjualan asli, dicatat di laci shift yang SEDANG
+  // buka — laci & laporan (COUNTED_STATUSES) jadi bersih tanpa logika khusus.
+  // =====================================================================
+
+  /** Baris yang masih bisa di-refund (sisa qty) + apakah barangnya bisa kembali ke stok — untuk dialog refund. */
+  async refundableLines(businessId: string, transactionId: string) {
+    const { original, lines } = await this.loadRefundable(this.prisma, businessId, transactionId);
+    return original.items.map((item) => {
+      const line = lines.find((l) => l.id === item.id)!;
+      return {
+        transaction_item_id: item.id,
+        item_name: item.variant_name_snapshot
+          ? `${item.item_name_snapshot} (${item.variant_name_snapshot})`
+          : item.item_name_snapshot,
+        quantity: line.quantity,
+        refunded_quantity: line.refundedQuantity,
+        remaining_quantity: line.quantity.minus(line.refundedQuantity),
+        unit_price: item.unit_price,
+        restockable: this.isRestockable(item),
+      };
+    });
+  }
+
+  /** Pratinjau refund (hanya membaca) — angka yang sama dengan refundTransaction. */
+  async quoteRefund(businessId: string, transactionId: string, dto: RefundQuoteDto) {
+    const refundable = await this.loadRefundable(this.prisma, businessId, transactionId);
+    const computation = computeRefund(refundable.transaction, refundable.lines, this.toSelection(dto.lines));
+    const allocation = allocateRefund(computation.amount, await this.unpaidReceivable(this.prisma, transactionId));
+    return {
+      amount: computation.amount,
+      receivable_reduction: allocation.receivableReduction,
+      paid_out: allocation.paidOut,
+      is_final: computation.isFinal,
+      lines: computation.lines.map((l) => ({ transaction_item_id: l.lineId, quantity: l.quantity, value: l.value })),
+    };
+  }
+
+  async refundTransaction(businessId: string, transactionId: string, dto: RefundTransactionDto, actor: AuditActor) {
+    const head = await this.prisma.transaction.findFirst({
+      where: { id: transactionId, business_id: businessId },
+      select: { outlet_id: true },
+    });
+    if (!head) throw new NotFoundException("Transaksi tidak ditemukan");
+
+    return this.withIdempotency(businessId, head.outlet_id, dto.client_ref, () =>
+      this.prisma.$transaction(
+        async (tx) => {
+          // Kunci penjualan asli: refund paralel antre dan menghitung sisa item
+          // dari keadaan terbaru (tidak bisa me-refund unit yang sama dua kali).
+          await tx.$queryRaw`
+            SELECT id FROM transactions WHERE id = ${transactionId} AND business_id = ${businessId} FOR UPDATE
+          `;
+          // Retry dengan client_ref yang sama bisa menunggu di kunci di atas sementara
+          // percobaan pertama commit — cek ulang di sini, sebelum validasi sisa item
+          // (yang akan menolak karena unitnya sudah di-refund oleh percobaan pertama).
+          if (dto.client_ref) {
+            const existing = await tx.transaction.findUnique({
+              where: { business_id_client_ref: { business_id: businessId, client_ref: dto.client_ref } },
+              include: TRANSACTION_INCLUDE,
+            });
+            if (existing) return existing;
+          }
+          const { original, transaction, lines } = await this.loadRefundable(tx, businessId, transactionId);
+          const selection = this.toSelection(dto.lines);
+          const computation = computeRefund(transaction, lines, selection);
+
+          const receivables = await tx.$queryRaw<
+            Array<{ id: string; amount: Prisma.Decimal | string; amount_paid: Prisma.Decimal | string; status: string }>
+          >`
+            SELECT id, amount, amount_paid, status FROM customer_receivables
+            WHERE transaction_id = ${transactionId} FOR UPDATE
+          `;
+          const openReceivable = receivables.find((r) => r.status === "outstanding" || r.status === "partially_paid");
+          const unpaid = openReceivable
+            ? new Prisma.Decimal(openReceivable.amount).minus(new Prisma.Decimal(openReceivable.amount_paid))
+            : new Prisma.Decimal(0);
+          const allocation = allocateRefund(computation.amount, unpaid);
+
+          // Uang keluar lewat kanal pilihan kasir; tunai wajib dari laci yang sedang buka.
+          let channel: { id: string; name: string; channel_type: string } | null = null;
+          if (allocation.paidOut.greaterThan(0)) {
+            channel = await tx.paymentChannel.findFirst({
+              where: { id: dto.payment_channel_id, business_id: businessId, is_active: true },
+              select: { id: true, name: true, channel_type: true },
+            });
+            if (!channel) throw new NotFoundException("Metode refund tidak ditemukan");
+          }
+          const cashDrawerSessionId = await this.lockOpenDrawerSession(tx, original.outlet_id);
+          if (channel?.channel_type === "cash" && !cashDrawerSessionId) {
+            throw new ConflictException("Buka shift laci dulu untuk refund tunai");
+          }
+
+          const timeZone = await this.businessTimeZone(tx, businessId);
+          const refundNumber = await this.nextTransactionNumber(tx, businessId, original.outlet_id, timeZone, "refund");
+
+          // Barang fisik kembali ke stok (default); menu resep & paket tidak — bahannya sudah terpakai.
+          const restockLines = computation.lines.filter((l) => {
+            const line = original.items.find((i) => i.id === l.lineId)!;
+            const wanted = dto.lines.find((d) => d.transaction_item_id === l.lineId)?.restock ?? true;
+            return wanted && this.isRestockable(line);
+          });
+          const restockedCost = restockLines.reduce((sum, l) => {
+            const line = original.items.find((i) => i.id === l.lineId)!;
+            return sum.plus(roundMoney(new Prisma.Decimal(line.unit_cost_snapshot).times(l.quantity)));
+          }, new Prisma.Decimal(0));
+
+          const refund = await tx.transaction.create({
+            data: {
+              business_id: businessId,
+              outlet_id: original.outlet_id,
+              cashier_id: actor.userId,
+              customer_id: original.customer_id,
+              cash_drawer_session_id: cashDrawerSessionId,
+              transaction_number: refundNumber,
+              client_ref: dto.client_ref,
+              order_type: original.order_type,
+              transaction_type: "refund",
+              status: "completed",
+              subtotal: computation.subtotal.negated(),
+              discount_total: computation.discount.negated(),
+              tax_total: computation.tax.negated(),
+              service_charge_total: computation.serviceCharge.negated(),
+              rounding_adjustment: computation.rounding.negated(),
+              total: computation.amount.negated(),
+              amount_paid: allocation.paidOut.negated(),
+              total_cost: restockedCost.negated(),
+              reference_transaction_id: original.id,
+              notes: dto.reason,
+              completed_at: new Date(),
+            },
+          });
+
+          for (const l of computation.lines) {
+            const line = original.items.find((i) => i.id === l.lineId)!;
+            const restocked = restockLines.some((r) => r.lineId === l.lineId);
+            await tx.transactionItem.create({
+              data: {
+                transaction_id: refund.id,
+                item_id: line.item_id,
+                variant_id: line.variant_id,
+                item_name_snapshot: line.item_name_snapshot,
+                variant_name_snapshot: line.variant_name_snapshot,
+                quantity: l.quantity.negated(),
+                unit_price: line.unit_price,
+                unit_cost_snapshot: line.unit_cost_snapshot,
+                subtotal: l.value.negated(),
+                refunded_item_id: line.id,
+                notes: restocked ? null : "Tidak dikembalikan ke stok",
+              },
+            });
+          }
+
+          if (channel) {
+            await tx.payment.create({
+              data: {
+                transaction_id: refund.id,
+                payment_channel_id: channel.id,
+                channel_name_snapshot: channel.name,
+                amount: allocation.paidOut.negated(),
+              },
+            });
+          }
+          if (openReceivable && allocation.receivableReduction.greaterThan(0)) {
+            // Baris kasbon negatif memakai kanal yang sama dengan baris kasbon asli,
+            // supaya laporan metode bayar ikut bersih.
+            const originalKasbon = original.payments.find((p) => p.is_receivable);
+            await tx.payment.create({
+              data: {
+                transaction_id: refund.id,
+                payment_channel_id: originalKasbon?.payment_channel_id ?? null,
+                channel_name_snapshot: originalKasbon?.channel_name_snapshot ?? "Kasbon",
+                amount: allocation.receivableReduction.negated(),
+                is_receivable: true,
+              },
+            });
+            const newAmount = new Prisma.Decimal(openReceivable.amount).minus(allocation.receivableReduction);
+            const paid = new Prisma.Decimal(openReceivable.amount_paid);
+            await tx.customerReceivable.update({
+              where: { id: openReceivable.id },
+              data: {
+                amount: newAmount,
+                ...(paid.greaterThanOrEqualTo(newAmount) ? { status: "paid" as const } : {}),
+              },
+            });
+          }
+
+          await this.restockRefundLines(tx, original.outlet_id, refund.id, refundNumber, actor.userId, restockLines, original.items);
+
+          if (original.customer_id) {
+            await tx.customer.update({
+              where: { id: original.customer_id },
+              data: { total_spent: { decrement: computation.amount } },
+            });
+            await this.reverseLoyaltyForRefund(tx, original, refund.id, refundNumber, transaction.refundedTotal.plus(computation.amount));
+          }
+
+          const fullyRefundedLineIds = lines
+            .filter((line) => {
+              const now = computation.lines.find((l) => l.lineId === line.id)?.quantity ?? new Prisma.Decimal(0);
+              return line.refundedQuantity.plus(now).greaterThanOrEqualTo(line.quantity);
+            })
+            .map((line) => line.id);
+          if (fullyRefundedLineIds.length > 0) {
+            await tx.transactionItem.updateMany({ where: { id: { in: fullyRefundedLineIds } }, data: { is_refunded: true } });
+          }
+          await tx.transaction.update({
+            where: { id: original.id },
+            data: { status: computation.isFinal ? "refunded" : "partially_refunded" },
+          });
+
+          await writeAuditLog(tx, {
+            businessId,
+            userId: actor.userId,
+            action: AUDIT_ACTIONS.REFUND_TRANSACTION,
+            entityType: "transaction",
+            entityId: original.id,
+            oldValue: { status: original.status },
+            newValue: {
+              status: computation.isFinal ? "refunded" : "partially_refunded",
+              refund_id: refund.id,
+              refund_number: refundNumber,
+              amount: computation.amount.toString(),
+              receivable_reduction: allocation.receivableReduction.toString(),
+              channel: channel?.name ?? null,
+              lines: computation.lines.map((l) => ({ transaction_item_id: l.lineId, quantity: l.quantity.toString() })),
+              reason: dto.reason,
+            },
+            ip: actor.ip,
+          });
+
+          return tx.transaction.findUniqueOrThrow({ where: { id: refund.id }, include: TRANSACTION_INCLUDE });
+        },
+        { maxWait: 10_000, timeout: 20_000 },
+      ),
+    );
+  }
+
+  private toSelection(lines: RefundQuoteDto["lines"]): RefundSelection[] {
+    return lines.map((l) => ({ lineId: l.transaction_item_id, quantity: new Prisma.Decimal(l.quantity) }));
+  }
+
+  /** Penjualan asli + sisa yang masih bisa di-refund per baris (dari baris refund yang menunjuknya). */
+  private async loadRefundable(db: Prisma.TransactionClient, businessId: string, transactionId: string) {
+    const original = await db.transaction.findFirst({
+      where: { id: transactionId, business_id: businessId },
+      include: {
+        items: { include: { item: { select: { item_type: true, track_stock: true, use_recipe: true } } } },
+        payments: true,
+      },
+    });
+    if (!original) throw new NotFoundException("Transaksi tidak ditemukan");
+    if (original.transaction_type !== "sale") throw new BadRequestException("Hanya transaksi penjualan yang bisa di-refund");
+    if (original.status !== "completed" && original.status !== "partially_refunded") {
+      throw new BadRequestException("Transaksi ini tidak bisa di-refund (belum selesai, dibatalkan, atau sudah di-refund penuh)");
+    }
+
+    const refundedPerLine = await db.transactionItem.groupBy({
+      by: ["refunded_item_id"],
+      where: { refunded_item_id: { in: original.items.map((i) => i.id) }, transaction: { status: { in: COUNTED_STATUSES } } },
+      _sum: { quantity: true },
+    });
+    const refundedTotal = await db.transaction.aggregate({
+      where: { reference_transaction_id: original.id, transaction_type: "refund", status: { in: COUNTED_STATUSES } },
+      _sum: { total: true },
+    });
+
+    const lines: RefundableLine[] = original.items.map((item) => ({
+      id: item.id,
+      quantity: new Prisma.Decimal(item.quantity),
+      subtotal: new Prisma.Decimal(item.subtotal),
+      // Baris refund bernilai negatif.
+      refundedQuantity: new Prisma.Decimal(
+        refundedPerLine.find((r) => r.refunded_item_id === item.id)?._sum.quantity ?? 0,
+      ).negated(),
+    }));
+    const transaction: RefundableTransaction = {
+      subtotal: new Prisma.Decimal(original.subtotal),
+      discount_total: new Prisma.Decimal(original.discount_total),
+      tax_total: new Prisma.Decimal(original.tax_total),
+      service_charge_total: new Prisma.Decimal(original.service_charge_total),
+      delivery_fee: new Prisma.Decimal(original.delivery_fee),
+      total: new Prisma.Decimal(original.total),
+      refundedTotal: new Prisma.Decimal(refundedTotal._sum.total ?? 0).negated(),
+    };
+    return { original, transaction, lines };
+  }
+
+  private async unpaidReceivable(db: Prisma.TransactionClient, transactionId: string): Promise<Prisma.Decimal> {
+    const receivable = await db.customerReceivable.findFirst({
+      where: { transaction_id: transactionId, status: { in: ["outstanding", "partially_paid"] } },
+    });
+    return receivable ? new Prisma.Decimal(receivable.amount).minus(receivable.amount_paid) : new Prisma.Decimal(0);
+  }
+
+  /** Hanya item yang stoknya dilacak langsung — bukan paket (komponen) atau menu resep (bahan). */
+  private isRestockable(line: { item_id: string | null; item: { item_type: string; track_stock: boolean; use_recipe: boolean } | null }) {
+    return !!line.item_id && !!line.item && line.item.track_stock && !line.item.use_recipe && line.item.item_type !== "bundle";
+  }
+
+  private async restockRefundLines(
+    tx: Prisma.TransactionClient,
+    outletId: string,
+    refundId: string,
+    refundNumber: string,
+    userId: string,
+    restockLines: RefundComputation["lines"],
+    items: Array<{ id: string; item_id: string | null; variant_id: string | null }>,
+  ) {
+    const targets = restockLines
+      .map((l) => {
+        const line = items.find((i) => i.id === l.lineId)!;
+        return { item_id: line.item_id!, variant_id: line.variant_id, quantity: l.quantity };
+      })
+      // Urutan kunci sama dengan reduceStockForItems — tidak deadlock dengan penjualan paralel.
+      .sort(compareStockKey);
+
+    for (const target of targets) {
+      const rows = await tx.$queryRaw<InventoryLockRow[]>`
+        SELECT id, quantity_on_hand FROM inventory
+        WHERE outlet_id = ${outletId} AND item_id = ${target.item_id}
+          AND variant_id IS NOT DISTINCT FROM ${target.variant_id}
+        FOR UPDATE
+      `;
+      const row = rows[0];
+      if (!row) continue; // item tidak lagi punya baris stok di outlet ini — uang tetap dikembalikan
+      await tx.inventory.update({
+        where: { id: row.id },
+        data: { quantity_on_hand: new Prisma.Decimal(row.quantity_on_hand).plus(target.quantity) },
+      });
+      await tx.stockMovement.create({
+        data: {
+          inventory_id: row.id,
+          movement_type: "return_in",
+          quantity: target.quantity,
+          reference_type: "transaction",
+          reference_id: refundId,
+          notes: `Refund ${refundNumber}`,
+          created_by: userId,
+        },
+      });
+    }
+  }
+
+  /**
+   * Poin dari penjualan asli dikurangi sebanding uang yang dikembalikan:
+   * sisa poin yang berhak = floor(poin awal × sisa total / total), dikurangi
+   * yang sudah dibalik oleh refund sebelumnya.
+   */
+  private async reverseLoyaltyForRefund(
+    tx: Prisma.TransactionClient,
+    original: { id: string; customer_id: string | null; total: Prisma.Decimal },
+    refundId: string,
+    refundNumber: string,
+    refundedTotalAfter: Prisma.Decimal,
+  ) {
+    if (!original.customer_id) return;
+    const earned = (
+      await tx.loyaltyPointEntry.aggregate({
+        where: { transaction_id: original.id, entry_type: "earn" },
+        _sum: { points: true },
+      })
+    )._sum.points ?? 0;
+    if (earned <= 0) return;
+
+    const alreadyReversed = -((
+      await tx.loyaltyPointEntry.aggregate({
+        where: { entry_type: "adjustment", transaction: { reference_transaction_id: original.id } },
+        _sum: { points: true },
+      })
+    )._sum.points ?? 0);
+    const total = new Prisma.Decimal(original.total);
+    const remainingTotal = Prisma.Decimal.max(total.minus(refundedTotalAfter), 0);
+    const entitled = total.isZero() ? 0 : new Prisma.Decimal(earned).times(remainingTotal).dividedBy(total).floor().toNumber();
+    const deduct = earned - entitled - alreadyReversed;
+    if (deduct <= 0) return;
+
+    await tx.customer.update({ where: { id: original.customer_id }, data: { loyalty_points: { decrement: deduct } } });
+    await tx.loyaltyPointEntry.create({
+      data: {
+        customer_id: original.customer_id,
+        entry_type: "adjustment",
+        points: -deduct,
+        transaction_id: refundId,
+        notes: `Refund ${refundNumber}`,
+      },
+    });
   }
 
   // =====================================================================
@@ -1291,6 +1700,7 @@ export class SalesService {
     businessId: string,
     outletId: string,
     timeZone: string,
+    docType: "transaction" | "refund" = "transaction",
   ): Promise<string> {
     // Tanggal di nomor struk & reset harian counter mengikuti tanggal lokal usaha
     // (bukan jam server — di Docker/UTC hari baru akan dimulai jam 07.00 WIB).
@@ -1301,16 +1711,17 @@ export class SalesService {
         business_id_outlet_id_doc_type_period: {
           business_id: businessId,
           outlet_id: outletId,
-          doc_type: "transaction",
+          doc_type: docType,
           period,
         },
       },
-      create: { business_id: businessId, outlet_id: outletId, doc_type: "transaction", period, last_number: 1 },
+      create: { business_id: businessId, outlet_id: outletId, doc_type: docType, period, last_number: 1 },
       update: { last_number: { increment: 1 } },
     });
+    const prefix = docType === "refund" ? "RFD" : "INV";
     const datePart = date.replace(/-/g, "");
     const outletShort = outletId.replace(/-/g, "").slice(0, 6).toUpperCase();
-    return `INV-${outletShort}-${datePart}-${String(counter.last_number).padStart(4, "0")}`;
+    return `${prefix}-${outletShort}-${datePart}-${String(counter.last_number).padStart(4, "0")}`;
   }
 
   /**

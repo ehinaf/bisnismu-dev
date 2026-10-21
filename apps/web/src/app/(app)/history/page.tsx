@@ -21,6 +21,8 @@ const STATUS_LABEL: Partial<Record<TransactionStatus, string>> = {
   partially_refunded: "Refund sebagian",
 };
 
+const COUNTED_STATUSES: TransactionStatus[] = ["completed", "refunded", "partially_refunded"];
+
 const STATUS_VARIANT: Partial<Record<TransactionStatus, BadgeProps["variant"]>> = {
   completed: "success",
   void: "danger",
@@ -53,12 +55,15 @@ export default function HistoryPage() {
       .finally(() => setLoading(false));
   }, [outlet, date]);
 
-  const completed = rows.filter((r) => r.status === "completed");
-  const completedTotal = completed.reduce((sum, r) => sum + Number(r.total), 0);
+  // Sama dengan laporan: penjualan yang (sebagian) di-refund tetap dihitung,
+  // transaksi refund (total negatif) mengurangi → total bersih hari itu.
+  const counted = rows.filter((r) => COUNTED_STATUSES.includes(r.status));
+  const saleCount = counted.filter((r) => r.transaction_type === "sale").length;
+  const netTotal = counted.reduce((sum, r) => sum + Number(r.total), 0);
 
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-5 p-4 sm:p-6">
-      <PageHeader icon={History} title="Riwayat Transaksi" description="Penjualan per hari — buka struk untuk cetak ulang atau membatalkan" />
+      <PageHeader icon={History} title="Riwayat Transaksi" description="Penjualan & refund per hari — buka struk untuk cetak ulang, refund, atau membatalkan" />
 
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="flex flex-col gap-1.5">
@@ -74,8 +79,8 @@ export default function HistoryPage() {
         </div>
         {!loading && !error && (
           <p className="text-sm text-muted-foreground">
-            {completed.length} transaksi selesai ·{" "}
-            <span className="font-semibold tabular-nums text-foreground">{formatCurrency(completedTotal)}</span>
+            {saleCount} penjualan · bersih{" "}
+            <span className="font-semibold tabular-nums text-foreground">{formatCurrency(netTotal)}</span>
           </p>
         )}
       </div>
@@ -91,6 +96,7 @@ export default function HistoryPage() {
           <CardContent className="divide-y divide-border p-0">
             {rows.map((r) => {
               const voided = r.status === "void";
+              const isRefund = r.transaction_type === "refund";
               const methods = r.payments.map((p) => (p.is_receivable ? "Kasbon" : p.channel_name_snapshot)).join(", ");
               return (
                 <Link
@@ -104,6 +110,7 @@ export default function HistoryPage() {
                       {new Date(r.created_at).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}
                       {methods && ` · ${methods}`}
                       {r.customer?.name && ` · ${r.customer.name}`}
+                      {isRefund && r.reference_transaction && ` · untuk ${r.reference_transaction.transaction_number}`}
                     </p>
                     {voided && r.void_reason && (
                       <p className="truncate text-xs text-destructive">Alasan: {r.void_reason}</p>
@@ -113,7 +120,11 @@ export default function HistoryPage() {
                     <span className={voided ? "text-sm tabular-nums text-muted-foreground line-through" : "text-sm font-semibold tabular-nums"}>
                       {formatCurrency(r.total)}
                     </span>
-                    <Badge variant={STATUS_VARIANT[r.status] ?? "muted"}>{STATUS_LABEL[r.status] ?? r.status}</Badge>
+                    {isRefund ? (
+                      <Badge variant="warning">Refund</Badge>
+                    ) : (
+                      <Badge variant={STATUS_VARIANT[r.status] ?? "muted"}>{STATUS_LABEL[r.status] ?? r.status}</Badge>
+                    )}
                   </div>
                   <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
                 </Link>

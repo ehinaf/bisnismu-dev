@@ -133,11 +133,18 @@ export interface PaymentDetail {
 
 export type TransactionStatus = "open" | "pending" | "completed" | "void" | "refunded" | "partially_refunded";
 
+export type TransactionType = "sale" | "refund";
+
 export interface TransactionDetail {
   id: string;
   transaction_number: string;
+  transaction_type: TransactionType;
   status: TransactionStatus;
   void_reason: string | null;
+  notes: string | null;
+  // Struk refund → penjualan asli; penjualan asli → daftar refund-nya.
+  reference_transaction: { id: string; transaction_number: string } | null;
+  refund_transactions: Array<{ id: string; transaction_number: string; total: string; created_at: string }>;
   subtotal: string;
   tax_total: string;
   service_charge_total: string;
@@ -150,11 +157,13 @@ export interface TransactionDetail {
   payments: PaymentDetail[];
 }
 
-// Baris GET /transactions (halaman Riwayat).
+// Baris GET /transactions (halaman Riwayat) — penjualan & refund (total negatif).
 export interface TransactionHistoryRow {
   id: string;
   transaction_number: string;
+  transaction_type: TransactionType;
   status: TransactionStatus;
+  reference_transaction: { transaction_number: string } | null;
   total: string;
   created_at: string;
   void_reason: string | null;
@@ -250,4 +259,33 @@ export interface CustomerReceivable {
   due_date: string | null;
   created_at: string;
   payments: ReceivablePayment[];
+}
+
+// GET /transactions/:id/refundable — baris yang masih bisa di-refund.
+export interface RefundableLine {
+  transaction_item_id: string;
+  item_name: string;
+  quantity: string;
+  refunded_quantity: string;
+  remaining_quantity: string;
+  unit_price: string;
+  restockable: boolean;
+}
+
+// POST /transactions/:id/refund/quote — angka refund dari server.
+export interface RefundQuote {
+  amount: string;
+  receivable_reduction: string;
+  paid_out: string;
+  is_final: boolean;
+}
+
+// GET /tenant/users — halaman Pengaturan (izin pengguna).
+export interface BusinessUser {
+  id: string;
+  name: string;
+  email: string | null;
+  role: "owner" | "admin" | "manager" | "cashier" | "staff";
+  is_active: boolean;
+  permissions: string[];
 }

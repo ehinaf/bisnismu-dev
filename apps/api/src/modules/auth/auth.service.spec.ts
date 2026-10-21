@@ -364,7 +364,7 @@ describe("AuthService", () => {
   describe("me", () => {
     it("owner/admin/manager mendapat semua izin; kasir hanya izin miliknya", async () => {
       await expect(service.me({ sub: "u", business_id: "b", role: "owner", email: null })).resolves.toEqual(
-        expect.objectContaining({ permissions: ["void_transaction"] }),
+        expect.objectContaining({ permissions: ["void_transaction", "refund_transaction"] }),
       );
       prisma.userPermission.findMany.mockResolvedValue([]);
       await expect(service.me({ sub: "u", business_id: "b", role: "cashier", email: null })).resolves.toEqual(

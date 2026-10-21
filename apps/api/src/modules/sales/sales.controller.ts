@@ -14,6 +14,7 @@ import { QuoteTransactionDto } from "./dto/quote-transaction.dto";
 import { QuoteBillDto } from "./dto/quote-bill.dto";
 import { ListTransactionsQueryDto } from "./dto/list-transactions-query.dto";
 import { VoidTransactionDto } from "./dto/void-transaction.dto";
+import { RefundQuoteDto, RefundTransactionDto } from "./dto/refund-transaction.dto";
 
 @UseGuards(JwtAuthGuard)
 @Controller("transactions")
@@ -86,6 +87,36 @@ export class SalesController {
     @Ip() ip: string,
   ) {
     return this.salesService.voidTransaction(user.business_id, id, dto.reason, { userId: user.sub, ip });
+  }
+
+  @Get(":id/refundable")
+  @UseGuards(PermissionsGuard)
+  @RequirePermission(PERMISSIONS.REFUND_TRANSACTION)
+  refundable(@CurrentUser() user: JwtPayload, @Param("id", ParseUUIDPipe) id: string) {
+    return this.salesService.refundableLines(user.business_id, id);
+  }
+
+  // Pratinjau refund (angka server) untuk dialog refund — tidak menyimpan apa pun.
+  @Post(":id/refund/quote")
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(PermissionsGuard)
+  @RequirePermission(PERMISSIONS.REFUND_TRANSACTION)
+  quoteRefund(@CurrentUser() user: JwtPayload, @Param("id", ParseUUIDPipe) id: string, @Body() dto: RefundQuoteDto) {
+    return this.salesService.quoteRefund(user.business_id, id, dto);
+  }
+
+  // Refund sebagian/penuh — juga untuk transaksi dari shift yang sudah ditutup.
+  @Post(":id/refund")
+  @HttpCode(HttpStatus.CREATED)
+  @UseGuards(PermissionsGuard)
+  @RequirePermission(PERMISSIONS.REFUND_TRANSACTION)
+  refund(
+    @CurrentUser() user: JwtPayload,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body() dto: RefundTransactionDto,
+    @Ip() ip: string,
+  ) {
+    return this.salesService.refundTransaction(user.business_id, id, dto, { userId: user.sub, ip });
   }
 
   @Post(":id/close")

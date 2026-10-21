@@ -1268,17 +1268,23 @@ model TransactionItem {
   subtotal                Decimal @db.Decimal(14, 2)
   is_refunded              Boolean @default(false)
   notes                    String? // "tanpa bawang", dsb
+  // Baris di transaksi refund menunjuk baris penjualan asli yang dikembalikan —
+  // jumlah yang sudah di-refund per baris = SUM(-quantity) baris yang menunjuknya.
+  refunded_item_id         String? @db.Uuid
 
   transaction Transaction  @relation(fields: [transaction_id], references: [id], onDelete: Cascade)
   item        Item?        @relation(fields: [item_id], references: [id])
   variant     ItemVariant? @relation(fields: [variant_id], references: [id])
   server      User?        @relation("TransactionItemServedBy", fields: [served_by], references: [id])
+  refunded_item TransactionItem?  @relation("TransactionItemRefund", fields: [refunded_item_id], references: [id])
 
+  refund_items       TransactionItem[]         @relation("TransactionItemRefund")
   modifiers          TransactionItemModifier[]
   commission_entries CommissionEntry[]
 
   @@index([transaction_id])
   @@index([item_id])
+  @@index([refunded_item_id])
   @@map("transaction_items")
 }
 

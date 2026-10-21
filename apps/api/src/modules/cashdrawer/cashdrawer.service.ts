@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@bisnismu/db";
+import { COUNTED_STATUSES } from "../../common/utils/transaction-status";
 import { PrismaService } from "../../prisma/prisma.service";
 import { OpenCashDrawerDto } from "./dto/open-cash-drawer.dto";
 import { CloseCashDrawerDto } from "./dto/close-cash-drawer.dto";
@@ -86,16 +87,18 @@ export class CashdrawerService {
       // payments.amount mencatat uang yang DISERAHKAN pelanggan (mis. 100.000 untuk
       // tagihan 85.000), dan kembalian selalu keluar dari laci — SalesService
       // menolak kembalian dari non-tunai/kasbon.
+      // Refund tunai tercatat sebagai payment NEGATIF di transaksi refund shift ini,
+      // jadi otomatis mengurangi (penjualan asli yang di-refund tetap dihitung).
       const cashTenderedAgg = await tx.payment.aggregate({
         where: {
           is_receivable: false,
           payment_channel: { channel_type: "cash" },
-          transaction: { cash_drawer_session_id: id, status: "completed" },
+          transaction: { cash_drawer_session_id: id, status: { in: COUNTED_STATUSES } },
         },
         _sum: { amount: true },
       });
       const changeGivenAgg = await tx.transaction.aggregate({
-        where: { cash_drawer_session_id: id, status: "completed" },
+        where: { cash_drawer_session_id: id, status: { in: COUNTED_STATUSES } },
         _sum: { change_due: true },
       });
       const cashSales = new Prisma.Decimal(cashTenderedAgg._sum.amount ?? 0).minus(

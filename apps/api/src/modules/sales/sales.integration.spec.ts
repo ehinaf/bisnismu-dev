@@ -5,10 +5,12 @@
  */
 import { randomUUID } from "node:crypto";
 import { BadRequestException, ConflictException } from "@nestjs/common";
+import { Prisma } from "@bisnismu/db";
 import { PrismaService } from "../../prisma/prisma.service";
 import { zonedParts } from "../../common/utils/business-time";
 import { CashdrawerService } from "../cashdrawer/cashdrawer.service";
 import { CustomerService } from "../customer/customer.service";
+import { ReportService } from "../report/report.service";
 import { SalesService } from "./sales.service";
 import { CreateTransactionDto } from "./dto/create-transaction.dto";
 
@@ -717,5 +719,286 @@ describe("SalesService (integration)", () => {
     expect(list.map((t) => t.id)).toEqual([voided.id, kept.id]);
     expect(list[0].status).toBe("void");
     expect(list[0].void_reason).toBe("Uji riwayat");
+  });
+  // ===================================================================
+  // Refund sebagian/penuh (Sprint 2 tahap 2)
+  // ===================================================================
+
+  const refundActor = () => ({ userId: cashierId, ip: "127.0.0.1" });
+  const refundLines = (lines: Array<[string, number, boolean?]>) =>
+    lines.map(([transaction_item_id, quantity, restock]) => ({ transaction_item_id, quantity, restock }));
+  const lineOf = (sale: { items: Array<{ id: string; item_id: string | null }> }, itemId: string) =>
+    sale.items.find((i) => i.item_id === itemId)!.id;
+
+  it("refund lintas shift: laci lama tetap, laci baru berkurang; barang fisik kembali ke stok, menu resep tidak; Σ refund = total", async () => {
+    const outlet = await prisma.outlet.create({ data: { business_id: businessId, name: "Outlet Refund" } });
+    const physical = await createItemWithStock("Barang Refund", 10, 15230, outlet.id);
+    const ingredient = await createItemWithStock("Bahan Refund", 100, 1000, outlet.id);
+    const menu = await prisma.item.create({
+      data: { business_id: businessId, name: "Menu Refund", base_price: 10000, use_recipe: true, track_stock: false },
+    });
+    await prisma.recipe.create({ data: { item_id: menu.id, ingredient_item_id: ingredient.id, quantity_used: 2 } });
+    const tax = await prisma.tax.create({ data: { business_id: businessId, name: "PB1 Refund", rate: 11 } });
+    try {
+      const items = [
+        { item_id: physical.id, quantity: 3 },
+        { item_id: menu.id, quantity: 1 },
+      ];
+      const quote = await service.quoteTransaction(businessId, { outlet_id: outlet.id, items });
+      const total = quote.total.toNumber();
+
+      const shift1 = await drawer.open(businessId, cashierId, { outlet_id: outlet.id, opening_balance: 0 });
+      const sale = await service.createTransaction(businessId, cashierId, {
+        outlet_id: outlet.id,
+        items,
+        payments: [{ payment_channel_id: paymentChannelId, amount: total }],
+      });
+      const closed1 = await drawer.close(businessId, cashierId, shift1.id, { closing_balance: total });
+      expect(closed1.expected_balance!.toNumber()).toBe(total);
+      const shift2 = await drawer.open(businessId, cashierId, { outlet_id: outlet.id, opening_balance: 200000 });
+
+      const quoted = await service.quoteRefund(businessId, sale.id, { lines: refundLines([[lineOf(sale, physical.id), 1]]) });
+      const first = await service.refundTransaction(
+        businessId,
+        sale.id,
+        { lines: refundLines([[lineOf(sale, physical.id), 1]]), payment_channel_id: paymentChannelId, reason: "Retur 1" },
+        refundActor(),
+      );
+      expect(first.transaction_type).toBe("refund");
+      expect(first.transaction_number.startsWith("RFD-")).toBe(true);
+      expect(first.reference_transaction_id).toBe(sale.id);
+      expect(first.cash_drawer_session_id).toBe(shift2.id);
+      expect(first.total.toNumber()).toBe(-quoted.amount.toNumber());
+      expect(await stockOf(physical.id, outlet.id)).toBe(8);
+      expect((await prisma.transaction.findUniqueOrThrow({ where: { id: sale.id } })).status).toBe("partially_refunded");
+
+      const rest = await service.refundTransaction(
+        businessId,
+        sale.id,
+        {
+          lines: refundLines([
+            [lineOf(sale, physical.id), 2],
+            [lineOf(sale, menu.id), 1, true], // restock diminta tapi menu resep tidak dikembalikan
+          ]),
+          payment_channel_id: paymentChannelId,
+          reason: "Retur sisa",
+        },
+        refundActor(),
+      );
+      expect(await stockOf(physical.id, outlet.id)).toBe(10);
+      expect(await stockOf(ingredient.id, outlet.id)).toBe(98);
+      const original = await service.getTransactionById(businessId, sale.id);
+      expect(original.status).toBe("refunded");
+      expect(original.refund_transactions).toHaveLength(2);
+      expect(first.total.plus(rest.total).negated().toNumber()).toBe(total);
+
+      // Laci lama tidak tersentuh; laci baru = modal − seluruh refund tunai.
+      expect((await prisma.cashDrawerSession.findUniqueOrThrow({ where: { id: shift1.id } })).expected_balance!.toNumber()).toBe(total);
+      const closed2 = await drawer.close(businessId, cashierId, shift2.id, { closing_balance: 200000 - total });
+      expect(closed2.expected_balance!.toNumber()).toBe(200000 - total);
+
+      expect(await prisma.auditLog.count({ where: { entity_id: sale.id, action: "refund_transaction" } })).toBe(2);
+      await expect(
+        service.refundTransaction(
+          businessId,
+          sale.id,
+          { lines: refundLines([[lineOf(sale, physical.id), 1]]), payment_channel_id: paymentChannelId, reason: "Lagi" },
+          refundActor(),
+        ),
+      ).rejects.toThrow(BadRequestException);
+    } finally {
+      await prisma.tax.update({ where: { id: tax.id }, data: { is_active: false } });
+    }
+  });
+
+  it("refund: qty melebihi sisa ditolak; QRIS tidak menyentuh laci; tunai tanpa shift buka → 409; void setelah refund ditolak", async () => {
+    const item = await createItemWithStock("Item Refund Aturan", 10);
+    const sale = await service.createTransaction(businessId, cashierId, buildDto(item.id, 2, 20000));
+    const line = lineOf(sale, item.id);
+
+    await expect(
+      service.refundTransaction(
+        businessId,
+        sale.id,
+        { lines: refundLines([[line, 3]]), payment_channel_id: qrisChannelId, reason: "Kebanyakan" },
+        refundActor(),
+      ),
+    ).rejects.toThrow(/melebihi sisa/);
+    await expect(
+      service.refundTransaction(
+        businessId,
+        sale.id,
+        { lines: refundLines([[line, 1]]), payment_channel_id: paymentChannelId, reason: "Tunai tanpa shift" },
+        refundActor(),
+      ),
+    ).rejects.toThrow(ConflictException);
+
+    const viaQris = await service.refundTransaction(
+      businessId,
+      sale.id,
+      { lines: refundLines([[line, 1]]), payment_channel_id: qrisChannelId, reason: "Retur QRIS" },
+      refundActor(),
+    );
+    expect(viaQris.payments[0].channel_name_snapshot).toBe("QRIS");
+    expect(viaQris.payments[0].amount.toNumber()).toBe(-10000);
+    expect(viaQris.cash_drawer_session_id).toBeNull();
+
+    await expect(service.voidTransaction(businessId, sale.id, "Coba void", actor())).rejects.toThrow(BadRequestException);
+  });
+
+  it("refund kasbon: sisa piutang dikurangi dulu, sisanya dibayar tunai dari laci", async () => {
+    await prisma.businessSetting.upsert({
+      where: { business_id: businessId },
+      create: { business_id: businessId, enable_kasbon: true },
+      update: { enable_kasbon: true },
+    });
+    const outlet = await prisma.outlet.create({ data: { business_id: businessId, name: "Outlet Refund Kasbon" } });
+    const item = await createItemWithStock("Item Refund Kasbon", 10, 30000, outlet.id);
+    const customer = await prisma.customer.create({
+      data: { business_id: businessId, name: "Pelanggan Refund Kasbon", credit_limit: 100000 },
+    });
+    const shift = await drawer.open(businessId, cashierId, { outlet_id: outlet.id, opening_balance: 50000 });
+    const sale = await service.createTransaction(businessId, cashierId, {
+      outlet_id: outlet.id,
+      customer_id: customer.id,
+      items: [{ item_id: item.id, quantity: 1 }],
+      payments: [
+        { payment_channel_id: paymentChannelId, amount: 10000 },
+        { payment_channel_id: paymentChannelId, amount: 20000, is_receivable: true },
+      ],
+    });
+
+    const refund = await service.refundTransaction(
+      businessId,
+      sale.id,
+      { lines: refundLines([[lineOf(sale, item.id), 1]]), payment_channel_id: paymentChannelId, reason: "Batal beli" },
+      refundActor(),
+    );
+
+    const receivable = await prisma.customerReceivable.findFirstOrThrow({ where: { transaction_id: sale.id } });
+    expect(receivable.amount.toNumber()).toBe(0);
+    expect(receivable.status).toBe("paid");
+    const cashOut = refund.payments.find((p) => !p.is_receivable)!;
+    expect(cashOut.amount.toNumber()).toBe(-10000);
+    expect(refund.payments.find((p) => p.is_receivable)!.amount.toNumber()).toBe(-20000);
+    expect((await prisma.customer.findUniqueOrThrow({ where: { id: customer.id } })).total_spent.toNumber()).toBe(0);
+
+    // Laci: 50.000 + 10.000 tunai diterima − 10.000 dikembalikan = 50.000
+    const closed = await drawer.close(businessId, cashierId, shift.id, { closing_balance: 50000 });
+    expect(closed.expected_balance!.toNumber()).toBe(50000);
+  });
+
+  it("refund membalik poin loyalty secara prorata", async () => {
+    const customer = await prisma.customer.create({ data: { business_id: businessId, name: "Pelanggan Poin Refund" } });
+    const item = await createItemWithStock("Item Poin Refund", 10, 10000);
+    await prisma.businessSetting.update({ where: { business_id: businessId }, data: { enable_loyalty: true } });
+    await prisma.loyaltyProgram.upsert({
+      where: { business_id: businessId },
+      create: { business_id: businessId, points_per_amount: 10000 },
+      update: { is_active: true, points_per_amount: 10000 },
+    });
+    try {
+      const sale = await service.createTransaction(businessId, cashierId, {
+        outlet_id: outletId,
+        customer_id: customer.id,
+        items: [{ item_id: item.id, quantity: 10 }],
+        payments: [{ payment_channel_id: qrisChannelId, amount: 100000 }],
+      });
+      const points = async () => (await prisma.customer.findUniqueOrThrow({ where: { id: customer.id } })).loyalty_points;
+      expect(await points()).toBe(10);
+      const line = lineOf(sale, item.id);
+
+      await service.refundTransaction(
+        businessId,
+        sale.id,
+        { lines: refundLines([[line, 3]]), payment_channel_id: qrisChannelId, reason: "Retur 3" },
+        refundActor(),
+      );
+      expect(await points()).toBe(7);
+      await service.refundTransaction(
+        businessId,
+        sale.id,
+        { lines: refundLines([[line, 7]]), payment_channel_id: qrisChannelId, reason: "Retur sisa" },
+        refundActor(),
+      );
+      expect(await points()).toBe(0);
+    } finally {
+      await prisma.businessSetting.update({ where: { business_id: businessId }, data: { enable_loyalty: false } });
+    }
+  });
+
+  it("laporan bersih setelah refund (penjualan harian, item terlaris, metode bayar)", async () => {
+    const reports = new ReportService(prisma);
+    const outlet = await prisma.outlet.create({ data: { business_id: businessId, name: "Outlet Laporan Refund" } });
+    const item = await createItemWithStock("Item Laporan Refund", 10, 10000, outlet.id);
+    const shift = await drawer.open(businessId, cashierId, { outlet_id: outlet.id, opening_balance: 0 });
+    const sale = await service.createTransaction(businessId, cashierId, {
+      outlet_id: outlet.id,
+      items: [{ item_id: item.id, quantity: 2 }],
+      payments: [{ payment_channel_id: paymentChannelId, amount: 20000 }],
+    });
+    await service.refundTransaction(
+      businessId,
+      sale.id,
+      { lines: refundLines([[lineOf(sale, item.id), 1]]), payment_channel_id: paymentChannelId, reason: "Retur laporan" },
+      refundActor(),
+    );
+
+    const daily = await reports.dailySales(businessId, { outlet_id: outlet.id });
+    expect(daily).toHaveLength(1);
+    expect(daily[0].gross_sales.toNumber()).toBe(10000);
+    expect(daily[0].transaction_count).toBe(1);
+    const top = await reports.topItems(businessId, { outlet_id: outlet.id });
+    expect(new Prisma.Decimal(top[0].total_qty!).toNumber()).toBe(1);
+    const methods = await reports.paymentMethods(businessId, { outlet_id: outlet.id });
+    expect(new Prisma.Decimal(methods[0].total_amount!).toNumber()).toBe(10000);
+    await drawer.close(businessId, cashierId, shift.id, { closing_balance: 10000 });
+  });
+
+  it("konkurensi: 5 refund paralel atas unit terakhir → tepat 1 sukses; client_ref sama → 1 refund", async () => {
+    const outlet = await prisma.outlet.create({ data: { business_id: businessId, name: "Outlet Refund Paralel" } });
+    const item = await createItemWithStock("Item Refund Paralel", 5, 10000, outlet.id);
+    await drawer.open(businessId, cashierId, { outlet_id: outlet.id, opening_balance: 0 });
+    const saleOf = () =>
+      service.createTransaction(businessId, cashierId, {
+        outlet_id: outlet.id,
+        items: [{ item_id: item.id, quantity: 1 }],
+        payments: [{ payment_channel_id: paymentChannelId, amount: 10000 }],
+      });
+    const sale = await saleOf();
+    await warmUpPool();
+
+    const results = await Promise.allSettled(
+      Array.from({ length: 5 }, () =>
+        service.refundTransaction(
+          businessId,
+          sale.id,
+          { lines: refundLines([[lineOf(sale, item.id), 1]]), payment_channel_id: paymentChannelId, reason: "Paralel" },
+          refundActor(),
+        ),
+      ),
+    );
+    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    expect(await stockOf(item.id, outlet.id)).toBe(5);
+
+    const sale2 = await saleOf();
+    const clientRef = randomUUID();
+    const same = await Promise.all(
+      Array.from({ length: 3 }, () =>
+        service.refundTransaction(
+          businessId,
+          sale2.id,
+          {
+            client_ref: clientRef,
+            lines: refundLines([[lineOf(sale2, item.id), 1]]),
+            payment_channel_id: paymentChannelId,
+            reason: "Retry",
+          },
+          refundActor(),
+        ),
+      ),
+    );
+    expect(new Set(same.map((r) => r.id)).size).toBe(1);
+    expect(await prisma.transaction.count({ where: { reference_transaction_id: sale2.id } })).toBe(1);
   });
 });
