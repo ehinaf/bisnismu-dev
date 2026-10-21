@@ -13,6 +13,11 @@ import { UpdateUserPermissionsDto } from "./dto/update-user-permissions.dto";
 export class UserPermissionController {
   constructor(private readonly userPermissionService: UserPermissionService) {}
 
+  @Get()
+  listUsers(@CurrentUser() user: JwtPayload) {
+    return this.userPermissionService.listUsers(user.business_id);
+  }
+
   @Get(":id/permissions")
   list(@CurrentUser() user: JwtPayload, @Param("id", ParseUUIDPipe) id: string) {
     return this.userPermissionService.list(user.business_id, id);

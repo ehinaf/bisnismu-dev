@@ -13,6 +13,23 @@ export class UserPermissionService {
     if (!user) throw new NotFoundException("User tidak ditemukan");
   }
 
+  /** Semua user aktif/nonaktif di bisnis beserta izin granularnya (halaman Pengaturan). */
+  async listUsers(business_id: string) {
+    const users = await this.prisma.user.findMany({
+      where: { business_id, deleted_at: null },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        is_active: true,
+        permissions: { select: { permission_key: true } },
+      },
+      orderBy: [{ role: "asc" }, { name: "asc" }],
+    });
+    return users.map((u) => ({ ...u, permissions: u.permissions.map((p) => p.permission_key).sort() }));
+  }
+
   async list(business_id: string, user_id: string) {
     await this.assertUser(this.prisma, business_id, user_id);
     const rows = await this.prisma.userPermission.findMany({ where: { user_id }, select: { permission_key: true } });
