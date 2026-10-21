@@ -128,21 +128,21 @@ describe("ReportService", () => {
       );
     });
 
-    it("`to` mencakup SELURUH hari itu (jam dinding usaha) untuk kolom TIMESTAMPTZ (created_at)", async () => {
+    it("`to` mencakup SELURUH hari itu (jam dinding usaha) untuk kolom TIMESTAMPTZ (completed_at)", async () => {
       prisma.transactionItem.groupBy.mockResolvedValue([]);
 
       await service.topItems("biz-1", { outlet_id: "outlet-1", from: "2026-07-01", to: "2026-07-12" });
 
       const callArgs = prisma.transactionItem.groupBy.mock.calls[0][0];
-      const createdAtFilter = callArgs.where.transaction.created_at;
+      const completedAtFilter = callArgs.where.transaction.completed_at;
       // Batas = 1 Jul 00:00 WIB s.d. sebelum 13 Jul 00:00 WIB (bukan tengah malam UTC).
-      expect(createdAtFilter.gte.toISOString()).toBe("2026-06-30T17:00:00.000Z");
-      expect(createdAtFilter.lt.toISOString()).toBe("2026-07-12T17:00:00.000Z");
-      expect(createdAtFilter.lte).toBeUndefined();
+      expect(completedAtFilter.gte.toISOString()).toBe("2026-06-30T17:00:00.000Z");
+      expect(completedAtFilter.lt.toISOString()).toBe("2026-07-12T17:00:00.000Z");
+      expect(completedAtFilter.lte).toBeUndefined();
       // 12 Jul 23:00 WIB masuk; 13 Jul 00:30 WIB tidak; 1 Jul 00:30 WIB masuk.
-      expect(new Date("2026-07-12T16:00:00.000Z") < createdAtFilter.lt).toBe(true);
-      expect(new Date("2026-07-12T17:30:00.000Z") < createdAtFilter.lt).toBe(false);
-      expect(new Date("2026-06-30T17:30:00.000Z") >= createdAtFilter.gte).toBe(true);
+      expect(new Date("2026-07-12T16:00:00.000Z") < completedAtFilter.lt).toBe(true);
+      expect(new Date("2026-07-12T17:30:00.000Z") < completedAtFilter.lt).toBe(false);
+      expect(new Date("2026-06-30T17:30:00.000Z") >= completedAtFilter.gte).toBe(true);
     });
 
     it("memakai zona waktu usaha (WITA) untuk batas hari", async () => {
@@ -151,9 +151,9 @@ describe("ReportService", () => {
 
       await service.paymentMethods("biz-1", { outlet_id: "outlet-1", from: "2026-07-01", to: "2026-07-01" });
 
-      const createdAtFilter = prisma.payment.groupBy.mock.calls[0][0].where.transaction.created_at;
-      expect(createdAtFilter.gte.toISOString()).toBe("2026-06-30T16:00:00.000Z");
-      expect(createdAtFilter.lt.toISOString()).toBe("2026-07-01T16:00:00.000Z");
+      const completedAtFilter = prisma.payment.groupBy.mock.calls[0][0].where.transaction.completed_at;
+      expect(completedAtFilter.gte.toISOString()).toBe("2026-06-30T16:00:00.000Z");
+      expect(completedAtFilter.lt.toISOString()).toBe("2026-07-01T16:00:00.000Z");
     });
   });
 });

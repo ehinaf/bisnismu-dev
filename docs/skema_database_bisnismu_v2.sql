@@ -895,18 +895,18 @@ CREATE VIEW v_daily_sales AS
 SELECT
     t.business_id,
     t.outlet_id,
-    DATE(t.created_at AT TIME ZONE b.timezone) AS sales_date,   -- tanggal lokal usaha
+    DATE(COALESCE(t.completed_at, t.created_at) AT TIME ZONE b.timezone) AS sales_date,  -- tanggal lokal usaha saat transaksi selesai
     -- Transaksi refund bernilai negatif dan ikut dijumlah → angka penjualan BERSIH;
     -- jumlah transaksi tetap hanya menghitung penjualan.
     COUNT(*) FILTER (WHERE t.transaction_type = 'sale') AS transaction_count,
     SUM(t.total)                      AS gross_sales,
     SUM(t.discount_total)             AS total_discounts,
     SUM(t.tax_total)                  AS total_taxes,
-    SUM(t.total - t.total_cost)       AS gross_profit
+    SUM(t.total - t.tax_total - t.total_cost) AS gross_profit  -- pajak bukan pendapatan
 FROM transactions t
 JOIN businesses b ON b.id = t.business_id
 WHERE t.status IN ('completed', 'refunded', 'partially_refunded')
-GROUP BY t.business_id, t.outlet_id, DATE(t.created_at AT TIME ZONE b.timezone);
+GROUP BY t.business_id, t.outlet_id, DATE(COALESCE(t.completed_at, t.created_at) AT TIME ZONE b.timezone);
 
 -- Item terlaris
 CREATE VIEW v_top_items AS

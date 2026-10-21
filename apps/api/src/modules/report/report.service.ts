@@ -27,7 +27,8 @@ export class ReportService {
     };
   }
 
-  // Untuk kolom TIMESTAMPTZ (created_at): "tanggal 21" berarti 00:00–24:00 jam
+  // Untuk kolom TIMESTAMPTZ (completed_at — penjualan dihitung di hari transaksi
+  // SELESAI, sama dengan v_daily_sales): "tanggal 21" berarti 00:00–24:00 jam
   // dinding usaha, bukan jam UTC — di WIB, 21 Okt dimulai 20 Okt 17:00 UTC.
   private timestampRange(timeZone: string, from?: string, to?: string) {
     if (!from && !to) return undefined;
@@ -68,7 +69,7 @@ export class ReportService {
 
   async topItems(business_id: string, query: DateRangeQueryDto) {
     await this.assertOutletInBusiness(business_id, query.outlet_id);
-    const createdAt = this.timestampRange(await this.businessTimeZone(business_id), query.from, query.to);
+    const completedAt = this.timestampRange(await this.businessTimeZone(business_id), query.from, query.to);
 
     const rows = await this.prisma.transactionItem.groupBy({
       by: ["item_id", "item_name_snapshot"],
@@ -77,7 +78,7 @@ export class ReportService {
           business_id,
           outlet_id: query.outlet_id,
           status: { in: COUNTED_STATUSES },
-          ...(createdAt ? { created_at: createdAt } : {}),
+          ...(completedAt ? { completed_at: completedAt } : {}),
         },
       },
       _sum: { quantity: true, subtotal: true },
@@ -95,7 +96,7 @@ export class ReportService {
 
   async paymentMethods(business_id: string, query: DateRangeQueryDto) {
     await this.assertOutletInBusiness(business_id, query.outlet_id);
-    const createdAt = this.timestampRange(await this.businessTimeZone(business_id), query.from, query.to);
+    const completedAt = this.timestampRange(await this.businessTimeZone(business_id), query.from, query.to);
 
     const rows = await this.prisma.payment.groupBy({
       by: ["channel_name_snapshot"],
@@ -104,7 +105,7 @@ export class ReportService {
           business_id,
           outlet_id: query.outlet_id,
           status: { in: COUNTED_STATUSES },
-          ...(createdAt ? { created_at: createdAt } : {}),
+          ...(completedAt ? { completed_at: completedAt } : {}),
         },
       },
       _sum: { amount: true },
