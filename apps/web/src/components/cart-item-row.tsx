@@ -47,8 +47,8 @@ export function CartItemRow({
         <button
           type="button"
           onClick={onRemove}
-          aria-label="Hapus"
-          className="text-muted-foreground transition-colors hover:text-destructive"
+          aria-label={`Hapus ${item.name}`}
+          className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
         >
           <Trash2 className="h-4 w-4" />
         </button>

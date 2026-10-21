@@ -34,8 +34,7 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { label: "Kasir", href: "/dashboard", icon: Calculator },
-  { label: "Transaksi", href: "/dashboard?tab=riwayat", icon: ReceiptText },
+  { label: "Kasir", href: "/transactions", icon: Calculator },
   { label: "Meja / Order", href: "/tables", icon: LayoutGrid, badge: "open-orders" },
   { label: "Produk", href: "/catalog", icon: Package, managementOnly: true },
   { label: "Stok", href: "/stock", icon: Boxes, managementOnly: true },
@@ -55,7 +54,7 @@ export function isNavActive(pathname: string, href: string): boolean {
   // Item ber-query (mis. tab riwayat) tidak dianggap aktif dari pathname saja.
   if (href.includes("?")) return false;
   const path = navPath(href);
-  return path === "/dashboard" ? pathname === path : pathname.startsWith(path);
+  return path === "/transactions" ? pathname === path : pathname.startsWith(path);
 }
 
 export function Sidebar({ openOrdersCount }: { openOrdersCount?: number }) {
@@ -83,8 +82,6 @@ export function SidebarContent({
     router.replace("/login");
   }
 
-  // Item "Transaksi" dan "Kasir" sama-sama menunjuk halaman kasir; hanya satu
-  // yang boleh aktif — Transaksi menang bila query tab=riwayat (belum ada).
   const items = NAV_ITEMS.filter((item) => !item.managementOnly || canManage);
 
   return (
@@ -164,7 +161,7 @@ function OutletSwitcher() {
   const active = useActiveOutlet();
 
   if (outlets.length <= 1) {
-    return <p className="truncate text-xs text-zinc-500">{active?.name ?? "Outlet"}</p>;
+    return <p className="truncate text-xs text-zinc-400">{active?.name ?? "Outlet"}</p>;
   }
 
   return (
@@ -173,7 +170,7 @@ function OutletSwitcher() {
         value={active?.id ?? ""}
         onChange={(e) => setActiveOutlet(e.target.value)}
         aria-label="Pilih outlet"
-        className="w-full cursor-pointer appearance-none truncate bg-transparent pr-4 text-xs text-zinc-500 outline-none hover:text-zinc-300"
+        className="w-full cursor-pointer appearance-none truncate bg-transparent pr-4 text-xs text-zinc-400 outline-none hover:text-zinc-300"
       >
         {outlets.map((o) => (
           <option key={o.id} value={o.id} className="bg-zinc-950 text-zinc-200">

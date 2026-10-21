@@ -29,7 +29,7 @@ export default function LoginPage() {
     try {
       const result = await apiClient.post<LoginResponse>("/auth/login", { email, password }, { auth: false });
       saveAuth(result.accessToken, result.user);
-      router.replace("/dashboard");
+      router.replace("/transactions");
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Gagal login. Coba lagi.");
     } finally {

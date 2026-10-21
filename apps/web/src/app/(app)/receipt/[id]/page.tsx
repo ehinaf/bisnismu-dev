@@ -1,7 +1,8 @@
 "use client";
 
-import { use, useEffect, useState } from "react";
+import { Suspense, use, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { ChevronLeft, Printer, Share2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,10 +10,20 @@ import { apiClient, ApiError } from "@/lib/api-client";
 import { formatCurrency } from "@/lib/format";
 import type { TransactionDetail } from "@/lib/types";
 
-export default function ReceiptPage({ params }: { params: Promise<{ id: string }> }) {
+export default function ReceiptPage(props: { params: Promise<{ id: string }> }) {
+  return (
+    <Suspense fallback={<p className="p-4 text-sm text-muted-foreground">Memuat struk...</p>}>
+      <ReceiptPageContent {...props} />
+    </Suspense>
+  );
+}
+
+function ReceiptPageContent({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
+  const searchParams = useSearchParams();
   const [transaction, setTransaction] = useState<TransactionDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const autoActionDone = useRef(false);
 
   useEffect(() => {
     apiClient
@@ -27,13 +38,22 @@ export default function ReceiptPage({ params }: { params: Promise<{ id: string }
     window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank");
   }
 
+  // Dipicu dari tombol "Simpan & Cetak" / "Simpan & WA" di kasir.
+  useEffect(() => {
+    if (!transaction || autoActionDone.current) return;
+    autoActionDone.current = true;
+    if (searchParams.get("print") === "1") window.print();
+    else if (searchParams.get("share") === "wa") handleShareWhatsApp();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [transaction]);
+
   if (error) return <p className="p-4 text-sm text-destructive">{error}</p>;
   if (!transaction) return <p className="p-4 text-sm text-muted-foreground">Memuat struk...</p>;
 
   return (
     <div className="mx-auto flex max-w-md flex-col gap-4 p-4 sm:p-6">
       <Link
-        href="/dashboard"
+        href="/transactions"
         className="no-print inline-flex w-fit items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground"
       >
         <ChevronLeft className="h-4 w-4" /> Transaksi baru

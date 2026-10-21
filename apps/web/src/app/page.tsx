@@ -8,7 +8,7 @@ export default function HomePage() {
   const router = useRouter();
 
   useEffect(() => {
-    router.replace(getToken() ? "/dashboard" : "/login");
+    router.replace(getToken() ? "/transactions" : "/login");
   }, [router]);
 
   return null;

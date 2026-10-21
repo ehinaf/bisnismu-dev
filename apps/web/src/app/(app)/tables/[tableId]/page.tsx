@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useEffect, useState } from "react";
+import { use, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ProductGrid } from "@/components/product-grid";
 import { CartItemRow } from "@/components/cart-item-row";
@@ -13,6 +13,9 @@ import { PageHeader } from "@/components/ui/page-header";
 import { LayoutGrid } from "lucide-react";
 import { apiClient, ApiError } from "@/lib/api-client";
 import { formatCurrency } from "@/lib/format";
+import { useCheckoutQuote } from "@/lib/hooks/use-checkout-quote";
+import { checkPayments } from "@/lib/payment-rules";
+import { newClientRef } from "@/lib/utils";
 import type { CartItem } from "@/lib/stores/cart-store";
 import type { CatalogItem, DiningTable, OpenBillTransaction, Outlet, PaymentChannel } from "@/lib/types";
 
@@ -59,6 +62,15 @@ export default function TableBillPage({ params }: { params: Promise<{ tableId: s
   const [payingOpen, setPayingOpen] = useState(false);
   const [channelId, setChannelId] = useState("");
   const [amountPaid, setAmountPaid] = useState("");
+  // Idempotency key buka meja — dipakai ulang bila request diulang setelah gagal/putus.
+  const openBillRef = useRef<string | null>(null);
+
+  // Total bila bill ditutup SEKARANG (diskon otomatis/promo jam dievaluasi saat ini).
+  const {
+    quote: closeQuote,
+    loading: quoteLoading,
+    error: quoteError,
+  } = useCheckoutQuote(payingOpen && bill ? `/transactions/${bill.id}/quote` : null, {});
 
   async function loadAll() {
     setLoading(true);
@@ -97,7 +109,9 @@ export default function TableBillPage({ params }: { params: Promise<{ tableId: s
     setSubmitting(true);
     setError(null);
     try {
+      openBillRef.current ??= newClientRef();
       await apiClient.post("/transactions/open", {
+        client_ref: openBillRef.current,
         outlet_id: outlet.id,
         dining_table_id: tableId,
         guest_count: guestCount ? Number(guestCount) : undefined,
@@ -146,9 +160,18 @@ export default function TableBillPage({ params }: { params: Promise<{ tableId: s
     }
   }
 
-  const billTotal = bill ? Number(bill.total) : 0;
+  const billTotal = closeQuote ? Number(closeQuote.total) : bill ? Number(bill.total) : 0;
+  const billDiscount = closeQuote ? Number(closeQuote.discount_total) : 0;
   const paidNumber = Number(amountPaid) || 0;
-  const change = paidNumber > billTotal ? paidNumber - billTotal : 0;
+  const selectedChannel = channels.find((c) => c.id === channelId);
+  const payCheck = checkPayments(
+    billTotal,
+    selectedChannel ? [{ channel_type: selectedChannel.channel_type, amount: paidNumber }] : [],
+  );
+  const change = payCheck.change;
+  const payBlocker = quoteError ?? (paidNumber > 0 ? payCheck.error : null);
+  const canPay =
+    !submitting && !!channelId && !quoteLoading && !payBlocker && paidNumber > 0 && payCheck.remaining === 0;
 
   if (loading) return <p className="p-4 text-sm text-muted-foreground">Memuat...</p>;
   if (!table) return <p className="p-4 text-sm text-destructive">Meja tidak ditemukan.</p>;
@@ -274,6 +297,18 @@ export default function TableBillPage({ params }: { params: Promise<{ tableId: s
                 <CardTitle>Pembayaran</CardTitle>
               </CardHeader>
               <CardContent className="flex flex-col gap-4">
+                <div className="flex flex-col gap-1 text-sm">
+                  {billDiscount > 0 && (
+                    <div className="flex justify-between text-muted-foreground">
+                      <span>Diskon</span>
+                      <span className="tabular-nums">− {formatCurrency(billDiscount)}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between font-semibold">
+                    <span>Total Bayar</span>
+                    <span className="tabular-nums">{quoteLoading ? "Menghitung…" : formatCurrency(billTotal)}</span>
+                  </div>
+                </div>
                 <div className="flex flex-col gap-1.5">
                   <Label htmlFor="channel">Metode Bayar</Label>
                   <Select id="channel" value={channelId} onChange={(e) => setChannelId(e.target.value)}>
@@ -299,8 +334,13 @@ export default function TableBillPage({ params }: { params: Promise<{ tableId: s
                   <span className="text-muted-foreground">Kembalian</span>
                   <span className="font-semibold">{formatCurrency(change)}</span>
                 </div>
+                {payBlocker && (
+                  <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
+                    {payBlocker}
+                  </p>
+                )}
                 <div className="flex gap-2">
-                  <Button size="lg" className="flex-1" disabled={submitting || !channelId} onClick={handleClose}>
+                  <Button size="lg" className="flex-1" disabled={!canPay} onClick={handleClose}>
                     {submitting ? "Memproses..." : "Bayar & Tutup"}
                   </Button>
                   <Button variant="outline" onClick={() => setPayingOpen(false)}>

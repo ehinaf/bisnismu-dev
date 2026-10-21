@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { Bell, ChevronDown, LogOut, Menu } from "lucide-react";
+import { ChevronDown, LogOut, Menu } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { clearAuth, getUser } from "@/lib/auth";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -61,15 +61,6 @@ export function Topbar({ onOpenMenu }: { onOpenMenu: () => void }) {
       <div className="flex-1" />
 
       <div className="flex items-center gap-1">
-        <button
-          type="button"
-          disabled
-          title="Notifikasi — segera hadir"
-          aria-label="Notifikasi (segera hadir)"
-          className="rounded-lg p-2 text-muted-foreground/50"
-        >
-          <Bell className="h-5 w-5" />
-        </button>
         <ThemeToggle />
         <UserMenu />
       </div>

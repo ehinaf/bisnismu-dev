@@ -20,7 +20,7 @@ export function ShiftPanel({ user }: { user: AuthUser | null }) {
 
   return (
     <div className="border-t border-zinc-800 px-4 py-3">
-      <p className="text-xs text-zinc-500">Kasir Aktif</p>
+      <p className="text-xs text-zinc-400">Kasir Aktif</p>
       <p className="truncate text-sm font-semibold text-white">{user.name}</p>
 
       <div className="mt-2 flex items-center gap-2 text-xs">

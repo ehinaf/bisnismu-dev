@@ -37,7 +37,7 @@ export default function RegisterPage() {
     try {
       const result = await apiClient.post<RegisterResponse>("/auth/register", form, { auth: false });
       saveAuth(result.accessToken, result.user);
-      router.replace("/dashboard");
+      router.replace("/transactions");
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Gagal mendaftar. Coba lagi.");
     } finally {

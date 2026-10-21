@@ -14,14 +14,21 @@ import { getUser } from "@/lib/auth";
 import { formatCurrency } from "@/lib/format";
 import type { DailySalesRow, Outlet, PaymentMethodRow, ProfitLossSummary, TopItemRow } from "@/lib/types";
 
+// Tanggal kalender LOKAL (YYYY-MM-DD) — toISOString() memberi tanggal UTC, yang di
+// WIB antara 00:00–07:00 masih "kemarin".
+function localIsoDate(d: Date) {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
 function todayIso() {
-  return new Date().toISOString().slice(0, 10);
+  return localIsoDate(new Date());
 }
 
 function daysAgoIso(days: number) {
   const d = new Date();
   d.setDate(d.getDate() - days);
-  return d.toISOString().slice(0, 10);
+  return localIsoDate(d);
 }
 
 export default function ReportsPage() {
@@ -44,7 +51,7 @@ export default function ReportsPage() {
   useEffect(() => {
     const user = getUser();
     if (!user || !["owner", "admin", "manager"].includes(user.role)) {
-      router.replace("/dashboard");
+      router.replace("/transactions");
       return;
     }
     setReady(true);

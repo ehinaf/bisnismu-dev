@@ -5,8 +5,33 @@ export interface CatalogItem {
   id: string;
   name: string;
   sku: string | null;
+  barcode: string | null;
+  category_id: string | null;
   base_price: string;
   image_url: string | null;
+}
+
+export type TaxKind = "tax" | "service_charge";
+
+export interface Tax {
+  id: string;
+  name: string;
+  rate: string;
+  tax_kind: TaxKind;
+}
+
+export type RoundingMode =
+  | "none"
+  | "nearest_100"
+  | "up_100"
+  | "nearest_500"
+  | "up_500"
+  | "nearest_1000";
+
+export interface BusinessSettings {
+  default_tax_id: string | null;
+  rounding: RoundingMode;
+  enable_kasbon: boolean;
 }
 
 export type ItemType = "product" | "service" | "bundle" | "ingredient";
@@ -75,6 +100,20 @@ export interface PaymentChannel {
   id: string;
   name: string;
   channel_type: string;
+}
+
+// Hasil POST /transactions/quote & /transactions/:id/quote — angka final dari
+// server (diskon otomatis, voucher, pajak, pembulatan) sebelum pembayaran.
+export interface CheckoutQuote {
+  subtotal: string;
+  discount_total: string;
+  discounts: { name: string; amount: string }[];
+  voucher: { code: string; amount: string } | null;
+  tax_total: string;
+  service_charge_total: string;
+  delivery_fee: string;
+  rounding_adjustment: string;
+  total: string;
 }
 
 export interface TransactionItemDetail {

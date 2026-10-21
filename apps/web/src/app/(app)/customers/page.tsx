@@ -48,7 +48,7 @@ export default function CustomersPage() {
   useEffect(() => {
     const user = getUser();
     if (!user || !MANAGEMENT_ROLES.includes(user.role)) {
-      router.replace("/dashboard");
+      router.replace("/transactions");
       return;
     }
     setReady(true);

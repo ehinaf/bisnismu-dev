@@ -2,7 +2,9 @@ import { PackageOpen } from "lucide-react";
 import { ProductCard } from "@/components/product-card";
 import type { CatalogItem } from "@/lib/types";
 
-const GRID_CLASS = "grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5";
+// Jumlah kolom mengikuti lebar area produk, bukan lebar layar — area ini
+// menyempit saat sidebar dan kolom keranjang tampil di layar besar.
+const GRID_CLASS = "grid grid-cols-[repeat(auto-fill,minmax(9rem,1fr))] gap-3";
 
 export function ProductGrid({
   items,

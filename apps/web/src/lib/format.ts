@@ -7,3 +7,9 @@ export function formatCurrency(amount: number | string): string {
     maximumFractionDigits: 0,
   }).format(value);
 }
+
+/** Tarif persen dari API (string desimal, mis. "11.00") → "11%", "0,7%". */
+export function formatPercent(rate: number | string): string {
+  const value = typeof rate === "string" ? Number(rate) : rate;
+  return `${new Intl.NumberFormat("id-ID", { maximumFractionDigits: 2 }).format(value)}%`;
+}
