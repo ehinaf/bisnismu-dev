@@ -14,7 +14,8 @@ import { apiClient, ApiError } from "@/lib/api-client";
 import { getUser } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 import { formatCurrency } from "@/lib/format";
-import type { DiningTable, OpenBillTransaction, Outlet } from "@/lib/types";
+import { useActiveOutlet, useOutletStore } from "@/lib/stores/outlet-store";
+import type { DiningTable, OpenBillTransaction } from "@/lib/types";
 
 const MANAGEMENT_ROLES = ["owner", "admin", "manager"];
 
@@ -43,7 +44,9 @@ export default function TablesPage() {
   const router = useRouter();
   const [canManage, setCanManage] = useState(false);
 
-  const [outlet, setOutlet] = useState<Outlet | null>(null);
+  // Outlet yang dipilih di sidebar (diisi layout); halaman dimuat ulang saat diganti.
+  const outlet = useActiveOutlet();
+  const outletsLoaded = useOutletStore((s) => s.loaded);
   const [tables, setTables] = useState<DiningTable[]>([]);
   const [openBills, setOpenBills] = useState<OpenBillTransaction[]>([]);
   const [loading, setLoading] = useState(true);
@@ -59,16 +62,13 @@ export default function TablesPage() {
   }, []);
 
   async function loadAll() {
+    if (!outlet) return;
     setLoading(true);
     setError(null);
     try {
-      const outlets = await apiClient.get<Outlet[]>("/tenant/outlets");
-      const firstOutlet = outlets[0] ?? null;
-      setOutlet(firstOutlet);
-      if (!firstOutlet) return;
       const [tableList, bills] = await Promise.all([
-        apiClient.get<DiningTable[]>(`/tenant/outlets/${firstOutlet.id}/tables`),
-        apiClient.get<OpenBillTransaction[]>(`/transactions/open?outlet_id=${firstOutlet.id}`),
+        apiClient.get<DiningTable[]>(`/tenant/outlets/${outlet.id}/tables`),
+        apiClient.get<OpenBillTransaction[]>(`/transactions/open?outlet_id=${outlet.id}`),
       ]);
       setTables(tableList);
       setOpenBills(bills);
@@ -80,8 +80,10 @@ export default function TablesPage() {
   }
 
   useEffect(() => {
-    loadAll();
-  }, []);
+    if (outlet) loadAll();
+    else if (outletsLoaded) setLoading(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [outlet?.id, outletsLoaded]);
 
   function billForTable(tableId: string) {
     return openBills.find((b) => b.dining_table_id === tableId);

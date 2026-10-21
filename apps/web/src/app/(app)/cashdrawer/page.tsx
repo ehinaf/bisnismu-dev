@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
+import { MoneyInput } from "@/components/ui/money-input";
 import { Label } from "@/components/ui/label";
 import { PageHeader } from "@/components/ui/page-header";
 import { Select } from "@/components/ui/select";
@@ -161,13 +162,10 @@ function MovementForm() {
           </div>
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="movement-amount">Nominal (Rp)</Label>
-            <Input
+            <MoneyInput
               id="movement-amount"
-              type="number"
-              min={0}
-              inputMode="numeric"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
+              value={Number(amount) || 0}
+              onValueChange={(v) => setAmount(v ? String(v) : "")}
               placeholder="0"
             />
           </div>

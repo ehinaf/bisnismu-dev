@@ -63,6 +63,7 @@ export default function TransactionsPage() {
   const [tableModalOpen, setTableModalOpen] = useState(false);
   const [voucherModalOpen, setVoucherModalOpen] = useState(false);
   const [mobileCartOpen, setMobileCartOpen] = useState(false);
+  const [taxPopoverOpen, setTaxPopoverOpen] = useState(false);
 
   const [submitting, setSubmitting] = useState(false);
   const [holding, setHolding] = useState(false);
@@ -229,6 +230,7 @@ export default function TransactionsPage() {
   usePosHotkeys({
     enabled: !customerModalOpen && !tableModalOpen && !voucherModalOpen,
     onVoucher: () => setVoucherModalOpen(true),
+    onTax: () => setTaxPopoverOpen((v) => !v),
     onHoldOrder: handleHoldOrder,
     onSubmit: () => void handleSubmit("save"),
   });
@@ -297,6 +299,8 @@ export default function TransactionsPage() {
 
       <PosActionBar
         taxes={taxes}
+        taxPopoverOpen={taxPopoverOpen}
+        onTaxPopoverChange={setTaxPopoverOpen}
         onOpenVoucher={() => setVoucherModalOpen(true)}
         onHoldOrder={handleHoldOrder}
         holding={holding}

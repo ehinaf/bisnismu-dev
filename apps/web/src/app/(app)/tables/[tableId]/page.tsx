@@ -7,6 +7,7 @@ import { CartItemRow } from "@/components/cart-item-row";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { MoneyInput } from "@/components/ui/money-input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { PageHeader } from "@/components/ui/page-header";
@@ -17,7 +18,8 @@ import { useCheckoutQuote } from "@/lib/hooks/use-checkout-quote";
 import { checkPayments } from "@/lib/payment-rules";
 import { newClientRef } from "@/lib/utils";
 import type { CartItem } from "@/lib/stores/cart-store";
-import type { CatalogItem, DiningTable, OpenBillTransaction, Outlet, PaymentChannel } from "@/lib/types";
+import { useActiveOutlet, useOutletStore } from "@/lib/stores/outlet-store";
+import type { CatalogItem, DiningTable, OpenBillTransaction, PaymentChannel } from "@/lib/types";
 
 interface BillResponse {
   transaction: { id: string };
@@ -45,7 +47,8 @@ export default function TableBillPage({ params }: { params: Promise<{ tableId: s
   const { tableId } = use(params);
   const router = useRouter();
 
-  const [outlet, setOutlet] = useState<Outlet | null>(null);
+  const outlet = useActiveOutlet();
+  const outletsLoaded = useOutletStore((s) => s.loaded);
   const [table, setTable] = useState<DiningTable | null>(null);
   const [bill, setBill] = useState<OpenBillTransaction | null>(null);
   const [catalogItems, setCatalogItems] = useState<CatalogItem[]>([]);
@@ -73,17 +76,13 @@ export default function TableBillPage({ params }: { params: Promise<{ tableId: s
   } = useCheckoutQuote(payingOpen && bill ? `/transactions/${bill.id}/quote` : null, {});
 
   async function loadAll() {
+    if (!outlet) return;
     setLoading(true);
     setError(null);
     try {
-      const outlets = await apiClient.get<Outlet[]>("/tenant/outlets");
-      const firstOutlet = outlets[0] ?? null;
-      setOutlet(firstOutlet);
-      if (!firstOutlet) return;
-
       const [tables, bills, items, paymentChannels] = await Promise.all([
-        apiClient.get<DiningTable[]>(`/tenant/outlets/${firstOutlet.id}/tables`),
-        apiClient.get<OpenBillTransaction[]>(`/transactions/open?outlet_id=${firstOutlet.id}`),
+        apiClient.get<DiningTable[]>(`/tenant/outlets/${outlet.id}/tables`),
+        apiClient.get<OpenBillTransaction[]>(`/transactions/open?outlet_id=${outlet.id}`),
         apiClient.get<CatalogItem[]>("/catalog/items"),
         apiClient.get<PaymentChannel[]>("/tenant/payment-channels"),
       ]);
@@ -100,9 +99,10 @@ export default function TableBillPage({ params }: { params: Promise<{ tableId: s
   }
 
   useEffect(() => {
-    loadAll();
+    if (outlet) loadAll();
+    else if (outletsLoaded) setLoading(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tableId]);
+  }, [tableId, outlet?.id, outletsLoaded]);
 
   async function handleOpenBill() {
     if (!outlet || pending.length === 0) return;
@@ -321,13 +321,11 @@ export default function TableBillPage({ params }: { params: Promise<{ tableId: s
                 </div>
                 <div className="flex flex-col gap-1.5">
                   <Label htmlFor="amount">Jumlah Bayar</Label>
-                  <Input
+                  <MoneyInput
                     id="amount"
-                    type="number"
-                    min={0}
-                    value={amountPaid}
-                    onChange={(e) => setAmountPaid(e.target.value)}
-                    placeholder={String(billTotal)}
+                    value={Number(amountPaid) || 0}
+                    onValueChange={(v) => setAmountPaid(v ? String(v) : "")}
+                    placeholder={billTotal.toLocaleString("id-ID")}
                   />
                 </div>
                 <div className="flex justify-between text-sm">

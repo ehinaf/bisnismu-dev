@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Modal } from "@/components/ui/modal";
+import { MoneyInput } from "@/components/ui/money-input";
 import { ApiError } from "@/lib/api-client";
 import { formatCurrency } from "@/lib/format";
 import { useCashdrawer } from "@/lib/hooks/use-cashdrawer";
@@ -42,13 +43,10 @@ export function OpenShiftDialog({ open, onClose }: { open: boolean; onClose: () 
       <div className="flex flex-col gap-4">
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="opening-balance">Saldo awal laci (Rp)</Label>
-          <Input
+          <MoneyInput
             id="opening-balance"
-            type="number"
-            min={0}
-            inputMode="numeric"
-            value={balance}
-            onChange={(e) => setBalance(e.target.value)}
+            value={parseRupiah(balance)}
+            onValueChange={(v) => setBalance(String(v))}
             placeholder="0"
             autoFocus
           />
@@ -94,13 +92,10 @@ export function CloseShiftDialog({ open, onClose }: { open: boolean; onClose: ()
         )}
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="closing-balance">Saldo akhir dihitung (Rp)</Label>
-          <Input
+          <MoneyInput
             id="closing-balance"
-            type="number"
-            min={0}
-            inputMode="numeric"
-            value={balance}
-            onChange={(e) => setBalance(e.target.value)}
+            value={parseRupiah(balance)}
+            onValueChange={(v) => setBalance(String(v))}
             placeholder="0"
             autoFocus
           />

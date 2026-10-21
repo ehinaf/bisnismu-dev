@@ -12,7 +12,8 @@ import { BarChart3, Receipt, TrendingDown, TrendingUp, Wallet } from "lucide-rea
 import { apiClient, ApiError } from "@/lib/api-client";
 import { getUser } from "@/lib/auth";
 import { formatCurrency } from "@/lib/format";
-import type { DailySalesRow, Outlet, PaymentMethodRow, ProfitLossSummary, TopItemRow } from "@/lib/types";
+import { useActiveOutlet } from "@/lib/stores/outlet-store";
+import type { DailySalesRow, PaymentMethodRow, ProfitLossSummary, TopItemRow } from "@/lib/types";
 
 // Tanggal kalender LOKAL (YYYY-MM-DD) — toISOString() memberi tanggal UTC, yang di
 // WIB antara 00:00–07:00 masih "kemarin".
@@ -35,7 +36,7 @@ export default function ReportsPage() {
   const router = useRouter();
   const [ready, setReady] = useState(false);
 
-  const [outlet, setOutlet] = useState<Outlet | null>(null);
+  const outlet = useActiveOutlet();
   const [from, setFrom] = useState(todayIso());
   const [to, setTo] = useState(todayIso());
 
@@ -58,15 +59,7 @@ export default function ReportsPage() {
   }, [router]);
 
   useEffect(() => {
-    if (!ready) return;
-    apiClient
-      .get<Outlet[]>("/tenant/outlets")
-      .then((outlets) => setOutlet(outlets[0] ?? null))
-      .catch((err) => setError(err instanceof ApiError ? err.message : "Gagal memuat outlet."));
-  }, [ready]);
-
-  useEffect(() => {
-    if (!outlet) return;
+    if (!ready || !outlet) return;
     setLoading(true);
     setError(null);
     const qs = `outlet_id=${outlet.id}&from=${from}&to=${to}`;
@@ -84,7 +77,7 @@ export default function ReportsPage() {
       })
       .catch((err) => setError(err instanceof ApiError ? err.message : "Gagal memuat laporan."))
       .finally(() => setLoading(false));
-  }, [outlet, from, to]);
+  }, [ready, outlet, from, to]);
 
   function applyPreset(days: number) {
     setFrom(days === 0 ? todayIso() : daysAgoIso(days));

@@ -11,7 +11,7 @@ export function ProductCard({ item, onAdd }: { item: CatalogItem; onAdd: (item: 
       onClick={() => onAdd(item)}
       className="group relative flex flex-col overflow-hidden rounded-xl border border-border bg-card text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:translate-y-0 active:scale-[0.98]"
     >
-      <div className="relative aspect-square w-full overflow-hidden bg-muted">
+      <div className="relative aspect-[4/3] w-full overflow-hidden bg-muted">
         {item.image_url ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={item.image_url} alt={item.name} className="h-full w-full object-cover" />

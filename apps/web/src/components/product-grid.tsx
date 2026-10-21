@@ -4,7 +4,7 @@ import type { CatalogItem } from "@/lib/types";
 
 // Jumlah kolom mengikuti lebar area produk, bukan lebar layar — area ini
 // menyempit saat sidebar dan kolom keranjang tampil di layar besar.
-const GRID_CLASS = "grid grid-cols-[repeat(auto-fill,minmax(9rem,1fr))] gap-3";
+const GRID_CLASS = "grid grid-cols-[repeat(auto-fill,minmax(7.5rem,1fr))] gap-3";
 
 export function ProductGrid({
   items,
@@ -20,7 +20,7 @@ export function ProductGrid({
       <div className={GRID_CLASS}>
         {Array.from({ length: 10 }).map((_, i) => (
           <div key={i} className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
-            <div className="aspect-square w-full animate-pulse bg-muted" />
+            <div className="aspect-[4/3] w-full animate-pulse bg-muted" />
             <div className="flex flex-col gap-2 p-3">
               <div className="h-3.5 w-3/4 animate-pulse rounded bg-muted" />
               <div className="h-3.5 w-1/2 animate-pulse rounded bg-muted" />

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { MoneyInput } from "@/components/ui/money-input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { PageHeader } from "@/components/ui/page-header";
@@ -14,7 +15,8 @@ import { Package, PackageOpen, Plus } from "lucide-react";
 import { apiClient, ApiError } from "@/lib/api-client";
 import { getUser } from "@/lib/auth";
 import { formatCurrency } from "@/lib/format";
-import type { Category, ItemDetail, ItemType, Outlet, PricingType, Unit } from "@/lib/types";
+import { useActiveOutlet } from "@/lib/stores/outlet-store";
+import type { Category, ItemDetail, ItemType, PricingType, Unit } from "@/lib/types";
 
 const MANAGEMENT_ROLES = ["owner", "admin", "manager"];
 
@@ -65,7 +67,8 @@ export default function CatalogPage() {
   const router = useRouter();
   const [ready, setReady] = useState(false);
 
-  const [outlet, setOutlet] = useState<Outlet | null>(null);
+  // Stok awal produk baru dicatat di outlet yang dipilih di sidebar.
+  const outlet = useActiveOutlet();
   const [items, setItems] = useState<ItemDetail[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [units, setUnits] = useState<Unit[]>([]);
@@ -95,13 +98,11 @@ export default function CatalogPage() {
     setLoading(true);
     setError(null);
     try {
-      const [outlets, itemList, categoryList, unitList] = await Promise.all([
-        apiClient.get<Outlet[]>("/tenant/outlets"),
+      const [itemList, categoryList, unitList] = await Promise.all([
         apiClient.get<ItemDetail[]>("/catalog/items"),
         apiClient.get<Category[]>("/catalog/categories"),
         apiClient.get<Unit[]>("/catalog/units"),
       ]);
-      setOutlet(outlets[0] ?? null);
       setItems(itemList);
       setCategories(categoryList);
       setUnits(unitList);
@@ -348,24 +349,20 @@ export default function CatalogPage() {
 
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="base_price">Harga Jual</Label>
-                <Input
+                <MoneyInput
                   id="base_price"
-                  type="number"
-                  min={0}
-                  value={form.base_price}
-                  onChange={(e) => setForm((f) => ({ ...f, base_price: e.target.value }))}
+                  value={Number(form.base_price) || 0}
+                  onValueChange={(v) => setForm((f) => ({ ...f, base_price: v ? String(v) : "" }))}
                   disabled={form.pricing_type === "open"}
                   placeholder={form.pricing_type === "open" ? "Diinput kasir saat jual" : undefined}
                 />
               </div>
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="cost_price">Harga Modal (HPP)</Label>
-                <Input
+                <MoneyInput
                   id="cost_price"
-                  type="number"
-                  min={0}
-                  value={form.cost_price}
-                  onChange={(e) => setForm((f) => ({ ...f, cost_price: e.target.value }))}
+                  value={Number(form.cost_price) || 0}
+                  onValueChange={(v) => setForm((f) => ({ ...f, cost_price: v ? String(v) : "" }))}
                 />
               </div>
 

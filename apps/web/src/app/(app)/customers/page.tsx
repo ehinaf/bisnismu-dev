@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
+import { MoneyInput } from "@/components/ui/money-input";
 import { Label } from "@/components/ui/label";
 import { PageHeader } from "@/components/ui/page-header";
 import { Plus, Users } from "lucide-react";
@@ -173,12 +174,11 @@ export default function CustomersPage() {
               </div>
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="credit_limit">Batas Kasbon (Kredit)</Label>
-                <Input
+                <MoneyInput
                   id="credit_limit"
-                  type="number"
-                  min={0}
-                  value={form.credit_limit}
-                  onChange={(e) => setForm((f) => ({ ...f, credit_limit: e.target.value }))}
+                  value={Number(form.credit_limit) || 0}
+                  onValueChange={(v) => setForm((f) => ({ ...f, credit_limit: String(v) }))}
+                  placeholder="0"
                 />
               </div>
               <div className="flex flex-col gap-1.5 sm:col-span-2">

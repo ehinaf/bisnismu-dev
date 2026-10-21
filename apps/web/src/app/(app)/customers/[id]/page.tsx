@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { MoneyInput } from "@/components/ui/money-input";
 import { Label } from "@/components/ui/label";
 import { PageHeader } from "@/components/ui/page-header";
 import { Badge, type BadgeProps } from "@/components/ui/badge";
@@ -178,13 +179,11 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
                       <Label htmlFor={`pay-${r.id}`} className="text-xs">
                         Jumlah Cicilan
                       </Label>
-                      <Input
+                      <MoneyInput
                         id={`pay-${r.id}`}
-                        type="number"
-                        min={0}
-                        max={remaining(r)}
-                        value={payAmount}
-                        onChange={(e) => setPayAmount(e.target.value)}
+                        value={Number(payAmount) || 0}
+                        onValueChange={(v) => setPayAmount(v ? String(v) : "")}
+                        placeholder={remaining(r).toLocaleString("id-ID")}
                         className="h-9 w-36"
                       />
                     </div>

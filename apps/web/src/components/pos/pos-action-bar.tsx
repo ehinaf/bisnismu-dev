@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import { Ticket, ReceiptText, PauseCircle } from "lucide-react";
 import { Kbd } from "@/components/ui/kbd";
 import { cn } from "@/lib/utils";
@@ -39,17 +38,20 @@ function ActionButton({
 
 export function PosActionBar({
   taxes,
+  taxPopoverOpen,
+  onTaxPopoverChange,
   onOpenVoucher,
   onHoldOrder,
   holding,
 }: {
   taxes: Tax[];
+  // Dikendalikan halaman kasir supaya hotkey F6 bisa membuka/menutupnya.
+  taxPopoverOpen: boolean;
+  onTaxPopoverChange: (open: boolean) => void;
   onOpenVoucher: () => void;
   onHoldOrder: () => void;
   holding: boolean;
 }) {
-  const [taxPopoverOpen, setTaxPopoverOpen] = useState(false);
-
   return (
     <div className="no-print flex flex-wrap items-center gap-2 border-t border-border bg-card px-4 py-3">
       <ActionButton icon={Ticket} label="Voucher" shortcut="F5" onClick={onOpenVoucher} />
@@ -59,11 +61,11 @@ export function PosActionBar({
           icon={ReceiptText}
           label="Pajak"
           shortcut="F6"
-          onClick={() => setTaxPopoverOpen((v) => !v)}
+          onClick={() => onTaxPopoverChange(!taxPopoverOpen)}
         />
         {taxPopoverOpen && (
           <>
-            <div className="fixed inset-0 z-40" onClick={() => setTaxPopoverOpen(false)} />
+            <div className="fixed inset-0 z-40" onClick={() => onTaxPopoverChange(false)} />
             <div className="absolute bottom-full left-0 z-50 mb-2 w-56 rounded-lg border border-border bg-card p-3 text-sm shadow-lg">
               <p className="mb-2 text-xs font-medium text-muted-foreground">Pajak &amp; biaya aktif</p>
               {taxes.length === 0 ? (

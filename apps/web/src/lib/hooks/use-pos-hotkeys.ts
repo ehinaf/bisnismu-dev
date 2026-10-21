@@ -4,15 +4,17 @@ import { useEffect } from "react";
 
 interface PosHotkeyHandlers {
   onVoucher?: () => void;
+  onTax?: () => void;
   onHoldOrder?: () => void;
   onSubmit?: () => void;
   enabled?: boolean;
 }
 
-type HandlerKey = "onVoucher" | "onHoldOrder" | "onSubmit";
+type HandlerKey = "onVoucher" | "onTax" | "onHoldOrder" | "onSubmit";
 
 const KEY_MAP: Record<string, HandlerKey> = {
   F5: "onVoucher",
+  F6: "onTax",
   F8: "onHoldOrder",
   F9: "onSubmit",
 };
@@ -36,5 +38,5 @@ export function usePosHotkeys(handlers: PosHotkeyHandlers) {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [handlers.enabled, handlers.onVoucher, handlers.onHoldOrder, handlers.onSubmit]);
+  }, [handlers.enabled, handlers.onVoucher, handlers.onTax, handlers.onHoldOrder, handlers.onSubmit]);
 }
