@@ -11,6 +11,9 @@ describe("CashdrawerService", () => {
     cashDrawerSession: { findFirst: jest.Mock; create: jest.Mock; update: jest.Mock; findMany: jest.Mock };
     cashDrawerMovement: { create: jest.Mock };
     payment: { aggregate: jest.Mock };
+    transaction: { aggregate: jest.Mock };
+    $queryRaw: jest.Mock;
+    $transaction: jest.Mock;
   };
 
   beforeEach(async () => {
@@ -19,7 +22,13 @@ describe("CashdrawerService", () => {
       cashDrawerSession: { findFirst: jest.fn(), create: jest.fn(), update: jest.fn(), findMany: jest.fn() },
       cashDrawerMovement: { create: jest.fn() },
       payment: { aggregate: jest.fn().mockResolvedValue({ _sum: { amount: null } }) },
+      transaction: { aggregate: jest.fn().mockResolvedValue({ _sum: { change_due: null } }) },
+      // Kunci baris (outlet / sesi) — default: baris ditemukan.
+      $queryRaw: jest.fn().mockResolvedValue([{ id: "locked-row" }]),
+      $transaction: jest.fn(),
     };
+    // Interactive transaction: callback dijalankan dengan client yang sama.
+    prisma.$transaction.mockImplementation((fn: (tx: typeof prisma) => unknown) => fn(prisma));
     const moduleRef = await Test.createTestingModule({
       providers: [CashdrawerService, { provide: PrismaService, useValue: prisma }],
     }).compile();
@@ -28,7 +37,7 @@ describe("CashdrawerService", () => {
 
   describe("open", () => {
     it("menolak jika outlet bukan milik business", async () => {
-      prisma.outlet.findFirst.mockResolvedValue(null);
+      prisma.$queryRaw.mockResolvedValue([]);
       await expect(service.open("biz-1", "user-1", { outlet_id: "outlet-x" })).rejects.toThrow(NotFoundException);
     });
 
@@ -48,6 +57,21 @@ describe("CashdrawerService", () => {
       expect(prisma.cashDrawerSession.create).toHaveBeenCalledWith({
         data: { outlet_id: "outlet-1", opened_by: "user-1", opening_balance: 200000 },
       });
+    });
+
+    it("mengunci baris outlet sebelum cek laci terbuka (cegah dua sesi open bersamaan)", async () => {
+      prisma.cashDrawerSession.findFirst.mockResolvedValue(null);
+      prisma.cashDrawerSession.create.mockResolvedValue({ id: "session-1" });
+
+      await service.open("biz-1", "user-1", { outlet_id: "outlet-1" });
+
+      const [strings, ...values] = prisma.$queryRaw.mock.calls[0];
+      expect(strings.join("?")).toContain("FROM outlets");
+      expect(strings.join("?")).toContain("FOR NO KEY UPDATE");
+      expect(values).toEqual(["outlet-1", "biz-1"]);
+      expect(prisma.$queryRaw.mock.invocationCallOrder[0]).toBeLessThan(
+        prisma.cashDrawerSession.findFirst.mock.invocationCallOrder[0],
+      );
     });
   });
 
@@ -92,6 +116,43 @@ describe("CashdrawerService", () => {
       // 100000 + 50000 - 20000 + 75000 = 205000
       expect((updateArgs.data.expected_balance as Prisma.Decimal).toNumber()).toBe(205000);
       expect(updateArgs.data.status).toBe("closed");
+    });
+
+    it("penjualan tunai dihitung bersih: uang diterima − kembalian yang diberikan", async () => {
+      mockSession();
+      // Mis. 3 transaksi: pelanggan menyerahkan total 300.000 tunai, kembalian total 45.000.
+      prisma.payment.aggregate.mockResolvedValue({ _sum: { amount: new Prisma.Decimal(300000) } });
+      prisma.transaction.aggregate.mockResolvedValue({ _sum: { change_due: new Prisma.Decimal(45000) } });
+      prisma.cashDrawerSession.update.mockResolvedValue({});
+
+      await service.close("biz-1", "user-1", "session-1", { closing_balance: 355000 });
+
+      const updateArgs = prisma.cashDrawerSession.update.mock.calls[0][0];
+      // 100000 (modal) + 300000 − 45000 = 355000
+      expect((updateArgs.data.expected_balance as Prisma.Decimal).toNumber()).toBe(355000);
+      // Hanya transaksi completed di sesi ini yang dihitung.
+      expect(prisma.transaction.aggregate).toHaveBeenCalledWith({
+        where: { cash_drawer_session_id: "session-1", status: "completed" },
+        _sum: { change_due: true },
+      });
+      expect(prisma.payment.aggregate.mock.calls[0][0].where.transaction).toEqual({
+        cash_drawer_session_id: "session-1",
+        status: "completed",
+      });
+    });
+
+    it("mengunci sesi (FOR NO KEY UPDATE) sebelum membaca & menghitung saldo", async () => {
+      mockSession();
+      prisma.cashDrawerSession.update.mockResolvedValue({});
+
+      await service.close("biz-1", "user-1", "session-1", { closing_balance: 100000 });
+
+      const [strings, ...values] = prisma.$queryRaw.mock.calls[0];
+      expect(strings.join("?")).toContain("FOR NO KEY UPDATE OF s");
+      expect(values).toEqual(["session-1", "biz-1"]);
+      expect(prisma.$queryRaw.mock.invocationCallOrder[0]).toBeLessThan(
+        prisma.cashDrawerSession.findFirst.mock.invocationCallOrder[0],
+      );
     });
   });
 

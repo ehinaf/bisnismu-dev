@@ -19,7 +19,6 @@
     "strictBindCallApply": true,
     "forceConsistentCasingInFileNames": true,
     "noFallthroughCasesInSwitch": true,
-    "resolveJsonModule": true,
-    "rewriteRelativeImportExtensions": true
+    "resolveJsonModule": true
   }
 }

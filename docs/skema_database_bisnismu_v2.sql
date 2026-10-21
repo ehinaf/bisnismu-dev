@@ -323,7 +323,8 @@ CREATE TABLE inventory (
     reorder_level       NUMERIC(14,3) DEFAULT 0,
     avg_cost            NUMERIC(14,2) DEFAULT 0,   -- moving average cost utk laporan laba akurat
     updated_at          TIMESTAMPTZ DEFAULT now(),
-    UNIQUE (outlet_id, item_id, variant_id)
+    -- NULLS NOT DISTINCT: item tanpa varian (variant_id NULL) tetap hanya 1 baris per outlet
+    UNIQUE NULLS NOT DISTINCT (outlet_id, item_id, variant_id)
 );
 CREATE INDEX idx_inventory_outlet ON inventory(outlet_id);
 
@@ -713,6 +714,7 @@ CREATE TABLE transactions (
     booking_id          UUID REFERENCES bookings(id),
     cash_drawer_session_id UUID REFERENCES cash_drawer_sessions(id),
     transaction_number  VARCHAR(60) NOT NULL,
+    client_ref          UUID,                                 -- idempotency key checkout dari client
     order_type          order_type DEFAULT 'retail',
     transaction_type    transaction_type DEFAULT 'sale',
     status              transaction_status DEFAULT 'completed',
@@ -734,7 +736,8 @@ CREATE TABLE transactions (
     notes               TEXT,
     created_at          TIMESTAMPTZ DEFAULT now(),
     completed_at        TIMESTAMPTZ,
-    UNIQUE (business_id, transaction_number)
+    UNIQUE (business_id, transaction_number),
+    UNIQUE (business_id, client_ref)
 );
 CREATE INDEX idx_transactions_outlet_date ON transactions(outlet_id, created_at);
 CREATE INDEX idx_transactions_business_date ON transactions(business_id, created_at);
@@ -871,15 +874,16 @@ CREATE VIEW v_daily_sales AS
 SELECT
     t.business_id,
     t.outlet_id,
-    DATE(t.created_at AT TIME ZONE 'Asia/Jakarta') AS sales_date,
+    DATE(t.created_at AT TIME ZONE b.timezone) AS sales_date,   -- tanggal lokal usaha
     COUNT(*)                          AS transaction_count,
     SUM(t.total)                      AS gross_sales,
     SUM(t.discount_total)             AS total_discounts,
     SUM(t.tax_total)                  AS total_taxes,
     SUM(t.total - t.total_cost)       AS gross_profit
 FROM transactions t
+JOIN businesses b ON b.id = t.business_id
 WHERE t.status = 'completed' AND t.transaction_type = 'sale'
-GROUP BY t.business_id, t.outlet_id, DATE(t.created_at AT TIME ZONE 'Asia/Jakarta');
+GROUP BY t.business_id, t.outlet_id, DATE(t.created_at AT TIME ZONE b.timezone);
 
 -- Item terlaris
 CREATE VIEW v_top_items AS

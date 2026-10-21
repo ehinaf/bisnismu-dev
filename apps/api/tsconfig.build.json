@@ -1,4 +1,10 @@
 {
   "extends": "./tsconfig.json",
+  "compilerOptions": {
+    // Cache incremental di DALAM outDir: `nest start` menghapus dist/ (deleteOutDir),
+    // kalau .tsbuildinfo tertinggal di luar, tsc menganggap output masih up to date
+    // dan tidak meng-emit apa pun → "Cannot find module dist/main".
+    "tsBuildInfoFile": "./dist/tsconfig.build.tsbuildinfo"
+  },
   "exclude": ["node_modules", "dist", "**/*spec.ts", "test"]
 }

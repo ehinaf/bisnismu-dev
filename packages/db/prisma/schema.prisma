@@ -552,6 +552,9 @@ model Inventory {
 
   stock_movements StockMovement[]
 
+  // Di DB index ini NULLS NOT DISTINCT (ditambahkan manual di migrasi SQL) —
+  // tanpa itu Postgres menganggap tiap variant_id NULL berbeda, sehingga item
+  // tanpa varian bisa punya baris stok ganda di outlet yang sama.
   @@unique([outlet_id, item_id, variant_id])
   @@index([outlet_id])
   @@map("inventory")
@@ -1169,6 +1172,9 @@ model Transaction {
   booking_id                 String?           @db.Uuid
   cash_drawer_session_id     String?           @db.Uuid
   transaction_number         String            @db.VarChar(60)
+  // Idempotency key dari client (UUID per percobaan checkout) — request ulang
+  // setelah koneksi putus mengembalikan transaksi yang sama, bukan membuat duplikat.
+  client_ref                 String?           @db.Uuid
   order_type                 order_type        @default(retail)
   transaction_type           transaction_type  @default(sale)
   status                     transaction_status @default(completed)
@@ -1212,6 +1218,7 @@ model Transaction {
   voucher_redemptions   VoucherRedemption[]
 
   @@unique([business_id, transaction_number])
+  @@unique([business_id, client_ref])
   @@index([outlet_id, created_at])
   @@index([business_id, created_at])
   @@index([customer_id])

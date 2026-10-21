@@ -14,6 +14,11 @@ import { order_type } from "@bisnismu/db";
 import { CreateTransactionItemDto } from "./create-transaction-item.dto";
 
 export class OpenBillDto {
+  // Idempotency key — sama seperti CreateTransactionDto.client_ref.
+  @IsOptional()
+  @IsUUID()
+  client_ref?: string;
+
   @IsUUID()
   outlet_id!: string;
 

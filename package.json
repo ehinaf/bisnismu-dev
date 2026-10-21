@@ -10,8 +10,8 @@
     "test": "pnpm -r run test",
     "lint": "pnpm -r run lint",
     "typecheck": "pnpm -r run typecheck",
-    "db:migrate": "pnpm -w --filter @bisnismu/db exec prisma migrate dev",
-    "db:seed": "pnpm -w --filter @bisnismu/db exec prisma db seed",
+    "db:migrate": "pnpm --filter @bisnismu/db exec prisma migrate dev",
+    "db:seed": "pnpm --filter @bisnismu/db exec prisma db seed",
     "format": "prettier --write \"**/*.{ts,tsx,md,json}\"",
     "clean": "rm -rf node_modules .next dist build coverage"
   },

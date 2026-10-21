@@ -17,7 +17,10 @@ import { PromotionModule } from "./modules/promotion/promotion.module";
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
-    ThrottlerModule.forRoot([{ ttl: 60_000, limit: 20 }]),
+    // Batas umum per IP sengaja longgar: satu toko (beberapa tablet di satu Wi-Fi/NAT)
+    // berbagi satu IP, dan layar kasir memanggil API terus-menerus (katalog, quote,
+    // polling laci). Endpoint login/PIN punya batas ketat sendiri (@Throttle di AuthController).
+    ThrottlerModule.forRoot([{ ttl: 60_000, limit: 600 }]),
     PrismaModule,
     AuthModule,
     TenantModule,

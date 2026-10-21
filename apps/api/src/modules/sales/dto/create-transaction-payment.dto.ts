@@ -4,7 +4,7 @@ export class CreateTransactionPaymentDto {
   @IsUUID()
   payment_channel_id!: string;
 
-  @IsNumber()
+  @IsNumber({ maxDecimalPlaces: 2 })
   @IsPositive()
   amount!: number;
 

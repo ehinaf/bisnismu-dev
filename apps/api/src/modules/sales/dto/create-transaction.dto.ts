@@ -16,6 +16,13 @@ import { CreateTransactionItemDto } from "./create-transaction-item.dto";
 import { CreateTransactionPaymentDto } from "./create-transaction-payment.dto";
 
 export class CreateTransactionDto {
+  // Idempotency key: UUID yang dibuat client sekali per percobaan checkout dan
+  // dikirim ulang apa adanya saat retry. Request kedua dengan client_ref yang
+  // sama mengembalikan transaksi yang sudah tersimpan, bukan membuat duplikat.
+  @IsOptional()
+  @IsUUID()
+  client_ref?: string;
+
   @IsUUID()
   outlet_id!: string;
 
@@ -41,7 +48,7 @@ export class CreateTransactionDto {
   delivery_address?: string;
 
   @IsOptional()
-  @IsNumber()
+  @IsNumber({ maxDecimalPlaces: 2 })
   @IsPositive()
   delivery_fee?: number;
 

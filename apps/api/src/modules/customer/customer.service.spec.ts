@@ -20,6 +20,7 @@ function buildMockTx(overrides: Record<string, unknown> = {}) {
     receivablePayment: {
       create: jest.fn().mockResolvedValue({ id: "pay-1" }),
     },
+    $queryRaw: jest.fn().mockResolvedValue([{ id: "recv-1" }]),
   };
   return { ...base, ...overrides } as any;
 }
@@ -69,6 +70,19 @@ describe("CustomerService", () => {
       },
     });
     await expect(runPayment(mockTx, 10000)).rejects.toThrow(BadRequestException);
+  });
+
+  it("mengunci baris piutang sebelum membaca sisa (cegah cicilan paralel lebih bayar)", async () => {
+    const mockTx = buildMockTx();
+    await runPayment(mockTx, 40000);
+
+    const [strings, ...values] = mockTx.$queryRaw.mock.calls[0];
+    expect(strings.join("?")).toContain("FROM customer_receivables");
+    expect(strings.join("?")).toContain("FOR NO KEY UPDATE");
+    expect(values).toEqual(["recv-1", "cust-1", "biz-1"]);
+    expect(mockTx.$queryRaw.mock.invocationCallOrder[0]).toBeLessThan(
+      mockTx.customerReceivable.findFirst.mock.invocationCallOrder[0],
+    );
   });
 
   it("menolak cicilan yang melebihi sisa piutang", async () => {

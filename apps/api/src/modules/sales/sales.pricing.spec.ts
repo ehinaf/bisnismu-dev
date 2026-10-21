@@ -1,5 +1,5 @@
 import { Prisma } from "@bisnismu/db";
-import { applyRounding } from "./sales.pricing";
+import { applyRounding, roundMoney } from "./sales.pricing";
 
 describe("applyRounding", () => {
   it("mode none: tidak mengubah total", () => {
@@ -44,5 +44,17 @@ describe("applyRounding", () => {
   it("mode nearest_1000", () => {
     const result = applyRounding(new Prisma.Decimal(12499), "nearest_1000");
     expect(result.total.toNumber()).toBe(12000);
+  });
+});
+
+describe("roundMoney", () => {
+  it("membulatkan ke rupiah penuh, half-up", () => {
+    expect(roundMoney(new Prisma.Decimal("1677.5")).toNumber()).toBe(1678);
+    expect(roundMoney(new Prisma.Decimal("1675.3")).toNumber()).toBe(1675);
+    expect(roundMoney(new Prisma.Decimal("1675.49")).toNumber()).toBe(1675);
+  });
+
+  it("nilai yang sudah bulat tidak berubah", () => {
+    expect(roundMoney(new Prisma.Decimal(20000)).toNumber()).toBe(20000);
   });
 });

@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@bisnismu/db";
 import { PrismaService } from "../../prisma/prisma.service";
+import { nextDate, resolveTimeZone, zonedDayStart } from "../../common/utils/business-time";
 import { DateRangeQueryDto } from "./dto/date-range-query.dto";
 import { toCsv } from "./csv.util";
 
@@ -13,11 +14,9 @@ export class ReportService {
     if (!outlet) throw new NotFoundException("Outlet tidak ditemukan");
   }
 
-  // `to` dipakai baik untuk kolom DATE (sales_date/expense_date) maupun
-  // TIMESTAMPTZ (created_at). Pakai `lt` batas awal hari BERIKUTNYA (bukan
-  // `lte` ke tengah malam `to`) supaya konsisten inklusif untuk seluruh hari
-  // "to" di kedua tipe kolom — `lte` tengah malam akan memotong transaksi
-  // TIMESTAMPTZ yang terjadi setelah jam 00:00 pada hari itu.
+  // Untuk kolom DATE (sales_date di view — sudah tanggal lokal usaha — dan
+  // expense_date): bandingkan tanggal kalender apa adanya. Pakai `lt` awal hari
+  // BERIKUTNYA (bukan `lte`) supaya seluruh hari "to" ikut terhitung.
   private dateRange(from?: string, to?: string) {
     if (!from && !to) return undefined;
     const exclusiveUpperBound = to ? new Date(new Date(to).getTime() + 24 * 60 * 60 * 1000) : undefined;
@@ -25,6 +24,21 @@ export class ReportService {
       ...(from ? { gte: new Date(from) } : {}),
       ...(exclusiveUpperBound ? { lt: exclusiveUpperBound } : {}),
     };
+  }
+
+  // Untuk kolom TIMESTAMPTZ (created_at): "tanggal 21" berarti 00:00–24:00 jam
+  // dinding usaha, bukan jam UTC — di WIB, 21 Okt dimulai 20 Okt 17:00 UTC.
+  private timestampRange(timeZone: string, from?: string, to?: string) {
+    if (!from && !to) return undefined;
+    return {
+      ...(from ? { gte: zonedDayStart(from.slice(0, 10), timeZone) } : {}),
+      ...(to ? { lt: zonedDayStart(nextDate(to.slice(0, 10)), timeZone) } : {}),
+    };
+  }
+
+  private async businessTimeZone(business_id: string): Promise<string> {
+    const business = await this.prisma.business.findUnique({ where: { id: business_id }, select: { timezone: true } });
+    return resolveTimeZone(business?.timezone);
   }
 
   receivables(business_id: string) {
@@ -53,7 +67,7 @@ export class ReportService {
 
   async topItems(business_id: string, query: DateRangeQueryDto) {
     await this.assertOutletInBusiness(business_id, query.outlet_id);
-    const createdAt = this.dateRange(query.from, query.to);
+    const createdAt = this.timestampRange(await this.businessTimeZone(business_id), query.from, query.to);
 
     const rows = await this.prisma.transactionItem.groupBy({
       by: ["item_id", "item_name_snapshot"],
@@ -80,7 +94,7 @@ export class ReportService {
 
   async paymentMethods(business_id: string, query: DateRangeQueryDto) {
     await this.assertOutletInBusiness(business_id, query.outlet_id);
-    const createdAt = this.dateRange(query.from, query.to);
+    const createdAt = this.timestampRange(await this.businessTimeZone(business_id), query.from, query.to);
 
     const rows = await this.prisma.payment.groupBy({
       by: ["channel_name_snapshot"],

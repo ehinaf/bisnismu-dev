@@ -1,13 +1,25 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
-import { Prisma } from "@bisnismu/db";
+import { Prisma, rounding_mode } from "@bisnismu/db";
 import { PrismaService } from "../../prisma/prisma.service";
+import { dateOnly, resolveTimeZone, zonedParts } from "../../common/utils/business-time";
 import { CreateTransactionDto } from "./dto/create-transaction.dto";
 import { CreateTransactionItemDto } from "./dto/create-transaction-item.dto";
 import { CreateTransactionPaymentDto } from "./dto/create-transaction-payment.dto";
 import { OpenBillDto } from "./dto/open-bill.dto";
 import { AddBillItemsDto } from "./dto/add-bill-items.dto";
 import { CloseBillDto } from "./dto/close-bill.dto";
-import { applyRounding } from "./sales.pricing";
+import { QuoteTransactionDto } from "./dto/quote-transaction.dto";
+import { QuoteBillDto } from "./dto/quote-bill.dto";
+import { applyRounding, roundMoney } from "./sales.pricing";
+
+// Relasi yang dikembalikan setiap endpoint transaksi (create/open/addItems/close/getOne).
+const TRANSACTION_INCLUDE = {
+  items: { include: { modifiers: true } },
+  payments: true,
+  taxes: true,
+} satisfies Prisma.TransactionInclude;
+
+type TransactionWithRelations = Prisma.TransactionGetPayload<{ include: typeof TRANSACTION_INCLUDE }>;
 
 // Tipe minimal untuk baris hasil raw query SELECT ... FOR UPDATE.
 interface InventoryLockRow {
@@ -63,139 +75,240 @@ interface DiscountRow {
   amount_applied: Prisma.Decimal;
 }
 
+interface VoucherResult {
+  voucher_id: string;
+  code: string;
+  amount: Prisma.Decimal;
+}
+
+// Hasil perhitungan harga di titik checkout (createTransaction, closeBill, quote).
+interface CheckoutPricing {
+  discountRows: DiscountRow[];
+  voucher: VoucherResult | null;
+  discountTotal: Prisma.Decimal;
+  taxRows: TaxRow[];
+  taxTotal: Prisma.Decimal;
+  serviceChargeTotal: Prisma.Decimal;
+  deliveryFee: Prisma.Decimal;
+  total: Prisma.Decimal;
+  rounding_adjustment: Prisma.Decimal;
+}
+
+export interface CheckoutQuote {
+  subtotal: Prisma.Decimal;
+  discount_total: Prisma.Decimal;
+  discounts: Array<{ name: string; amount: Prisma.Decimal }>;
+  voucher: { code: string; amount: Prisma.Decimal } | null;
+  tax_total: Prisma.Decimal;
+  service_charge_total: Prisma.Decimal;
+  delivery_fee: Prisma.Decimal;
+  rounding_adjustment: Prisma.Decimal;
+  total: Prisma.Decimal;
+}
+
+// Satu pengurangan stok: item biasa, komponen bundle, bahan resep, atau bahan modifier.
+interface StockDeduction {
+  item_id: string;
+  variant_id: string | null;
+  quantity: Prisma.Decimal;
+  movement_type: "sale_out" | "recipe_out";
+  item_name: string;
+}
+
+function compareStockKey(a: StockDeduction, b: StockDeduction): number {
+  const keyA = `${a.item_id}:${a.variant_id ?? ""}`;
+  const keyB = `${b.item_id}:${b.variant_id ?? ""}`;
+  return keyA < keyB ? -1 : keyA > keyB ? 1 : 0;
+}
+
 @Injectable()
 export class SalesService {
   constructor(private readonly prisma: PrismaService) {}
 
   async createTransaction(businessId: string, cashierId: string, dto: CreateTransactionDto) {
-    return this.prisma.$transaction(
-      async (tx) => {
-        // ── 1. Validasi konteks (outlet, customer, meja) — semua WAJIB milik business_id ini ──
-        const outlet = await tx.outlet.findFirst({
-          where: { id: dto.outlet_id, business_id: businessId, deleted_at: null },
-        });
-        if (!outlet) throw new NotFoundException("Outlet tidak ditemukan");
-
-        // Sesi laci terbuka di outlet ini ditautkan otomatis jika ada — TIDAK wajib,
-        // supaya modul cashdrawer tetap independen (belum buka laci ≠ tidak bisa jual).
-        const openCashDrawerSession = await tx.cashDrawerSession.findFirst({
-          where: { outlet_id: dto.outlet_id, status: "open" },
-        });
-
-        const customer = dto.customer_id
-          ? await tx.customer.findFirst({
-              where: { id: dto.customer_id, business_id: businessId, deleted_at: null },
-            })
-          : null;
-        if (dto.customer_id && !customer) throw new NotFoundException("Pelanggan tidak ditemukan");
-
-        if (dto.dining_table_id) {
-          const table = await tx.diningTable.findFirst({
-            where: { id: dto.dining_table_id, outlet_id: dto.outlet_id },
+    return this.withIdempotency(businessId, dto.outlet_id, dto.client_ref, () =>
+      this.prisma.$transaction(
+        async (tx) => {
+          // ── 1. Validasi konteks (outlet, customer, meja) — semua WAJIB milik business_id ini ──
+          const outlet = await tx.outlet.findFirst({
+            where: { id: dto.outlet_id, business_id: businessId, deleted_at: null },
           });
-          if (!table) throw new NotFoundException("Meja tidak ditemukan");
-        }
+          if (!outlet) throw new NotFoundException("Outlet tidak ditemukan");
 
-        const settings = await tx.businessSetting.findFirst({ where: { business_id: businessId } });
+          // Sesi laci terbuka di outlet ini ditautkan otomatis jika ada — TIDAK wajib,
+          // supaya modul cashdrawer tetap independen (belum buka laci ≠ tidak bisa jual).
+          const cashDrawerSessionId = await this.lockOpenDrawerSession(tx, dto.outlet_id);
 
-        // ── 2. Resolusi harga tiap baris item ──
-        const { resolvedItems, subtotal, totalCost } = await this.resolveLineItems(
-          tx,
-          businessId,
-          dto.outlet_id,
-          dto.items,
-        );
+          const customer = dto.customer_id
+            ? await tx.customer.findFirst({
+                where: { id: dto.customer_id, business_id: businessId, deleted_at: null },
+              })
+            : null;
+          if (dto.customer_id && !customer) throw new NotFoundException("Pelanggan tidak ditemukan");
 
-        // ── 3. Diskon otomatis terjadwal + voucher berkode (opsional) ──
-        const eligibleLines: DiscountEligibleLine[] = resolvedItems.map((r) => ({
-          item_id: r.item_id,
-          category_id: r.category_id,
-          subtotal: r.subtotal,
-        }));
-        const { discountTotal: autoDiscountTotal, discountRows } = await this.resolveAutoDiscounts(
-          tx,
-          businessId,
-          subtotal,
-          eligibleLines,
-        );
-        const remainingAfterAuto = subtotal.minus(autoDiscountTotal);
-        const voucherResult = dto.voucher_code
-          ? await this.resolveVoucher(tx, businessId, dto.voucher_code, subtotal, remainingAfterAuto, customer?.id ?? null)
-          : null;
-        const discountTotal = autoDiscountTotal.plus(voucherResult?.amount ?? new Prisma.Decimal(0));
-        const effectiveSubtotal = subtotal.minus(discountTotal);
+          if (dto.dining_table_id) {
+            const table = await tx.diningTable.findFirst({
+              where: { id: dto.dining_table_id, outlet_id: dto.outlet_id },
+            });
+            if (!table) throw new NotFoundException("Meja tidak ditemukan");
+          }
 
-        // ── 4. Pajak & service charge — dihitung atas subtotal SETELAH diskon ──
-        const { taxTotal, serviceChargeTotal, taxRows } = await this.computeTaxes(tx, businessId, effectiveSubtotal);
+          const settings = await tx.businessSetting.findFirst({ where: { business_id: businessId } });
+          const timeZone = await this.businessTimeZone(tx, businessId);
 
-        // ── 5. Total & pembulatan ──
-        const deliveryFee = dto.delivery_fee ? new Prisma.Decimal(dto.delivery_fee) : new Prisma.Decimal(0);
-        const rawTotal = effectiveSubtotal.plus(taxTotal).plus(serviceChargeTotal).plus(deliveryFee);
-        const { total, rounding_adjustment } = applyRounding(rawTotal, settings?.rounding ?? "none");
+          // ── 2. Resolusi harga tiap baris item ──
+          const { resolvedItems, subtotal, totalCost } = await this.resolveLineItems(
+            tx,
+            businessId,
+            dto.outlet_id,
+            dto.items,
+          );
 
-        // ── 6. Nomor struk atomik (document_counters) ──
-        const transactionNumber = await this.nextTransactionNumber(tx, businessId, dto.outlet_id, outlet.id);
-
-        // ── 7. Insert transactions (amount_paid/change_due diisi finalizePayment di bawah) ──
-        const transaction = await tx.transaction.create({
-          data: {
-            business_id: businessId,
-            outlet_id: dto.outlet_id,
-            cashier_id: cashierId,
-            customer_id: customer?.id,
-            dining_table_id: dto.dining_table_id,
-            cash_drawer_session_id: openCashDrawerSession?.id,
-            transaction_number: transactionNumber,
-            order_type: dto.order_type ?? "retail",
-            status: "completed",
-            guest_count: dto.guest_count,
+          // ── 3–5. Diskon otomatis + voucher (baris voucher dikunci), pajak & service
+          // charge atas subtotal SETELAH diskon, ongkir, lalu pembulatan ──
+          const pricing = await this.priceCheckout(tx, businessId, {
             subtotal,
-            discount_total: discountTotal,
-            tax_total: taxTotal,
-            service_charge_total: serviceChargeTotal,
-            rounding_adjustment,
-            total,
-            total_cost: totalCost,
-            delivery_address: dto.delivery_address,
-            delivery_fee: deliveryFee,
-            notes: dto.notes,
-            completed_at: new Date(),
-          },
-        });
+            lines: resolvedItems,
+            voucherCode: dto.voucher_code,
+            customerId: customer?.id ?? null,
+            deliveryFee: dto.delivery_fee,
+            rounding: settings?.rounding ?? "none",
+            timeZone,
+            lockVoucher: true,
+          });
 
-        // ── 8. Insert transaction_items (snapshot) ──
-        await this.insertTransactionItems(tx, transaction.id, resolvedItems);
+          // ── 6. Nomor struk atomik (document_counters) ──
+          const transactionNumber = await this.nextTransactionNumber(tx, businessId, dto.outlet_id, timeZone);
 
-        // ── 9. Insert transaction_taxes & transaction_discounts (snapshot) ──
-        await this.insertTransactionTaxes(tx, transaction.id, taxRows);
-        await this.insertTransactionDiscounts(tx, transaction.id, discountRows);
-        if (voucherResult) {
-          await this.applyVoucherRedemption(tx, transaction.id, customer?.id ?? null, voucherResult.voucher_id, voucherResult.amount);
-        }
+          // ── 7. Insert transactions (amount_paid/change_due diisi finalizePayment di bawah) ──
+          const transaction = await tx.transaction.create({
+            data: {
+              business_id: businessId,
+              outlet_id: dto.outlet_id,
+              cashier_id: cashierId,
+              customer_id: customer?.id,
+              dining_table_id: dto.dining_table_id,
+              cash_drawer_session_id: cashDrawerSessionId,
+              transaction_number: transactionNumber,
+              client_ref: dto.client_ref,
+              order_type: dto.order_type ?? "retail",
+              status: "completed",
+              guest_count: dto.guest_count,
+              subtotal,
+              discount_total: pricing.discountTotal,
+              tax_total: pricing.taxTotal,
+              service_charge_total: pricing.serviceChargeTotal,
+              rounding_adjustment: pricing.rounding_adjustment,
+              total: pricing.total,
+              total_cost: totalCost,
+              delivery_address: dto.delivery_address,
+              delivery_fee: pricing.deliveryFee,
+              notes: dto.notes,
+              completed_at: new Date(),
+            },
+          });
 
-        // ── 10. Kurangi stok (SELECT ... FOR UPDATE) ──
-        await this.reduceStockForItems(tx, dto.outlet_id, resolvedItems, transaction.id, cashierId);
+          // ── 8. Insert transaction_items (snapshot) ──
+          await this.insertTransactionItems(tx, transaction.id, resolvedItems);
 
-        // ── 11. Pembayaran, kasbon, poin loyalty ──
-        await this.finalizePayment(tx, businessId, { id: transaction.id, total }, dto.payments, customer, settings);
+          // ── 9. Insert transaction_taxes & transaction_discounts (snapshot) ──
+          await this.insertTransactionTaxes(tx, transaction.id, pricing.taxRows);
+          await this.insertTransactionDiscounts(tx, transaction.id, pricing.discountRows);
+          if (pricing.voucher) {
+            await this.applyVoucherRedemption(
+              tx,
+              transaction.id,
+              customer?.id ?? null,
+              pricing.voucher.voucher_id,
+              pricing.voucher.amount,
+            );
+          }
 
-        // ── 12. Kembalikan transaksi lengkap ──
-        return tx.transaction.findUniqueOrThrow({
-          where: { id: transaction.id },
-          include: { items: { include: { modifiers: true } }, payments: true, taxes: true },
-        });
-      },
-      { maxWait: 10_000, timeout: 20_000 },
+          // ── 10. Kurangi stok (SELECT ... FOR UPDATE, urutan kunci deterministik) ──
+          await this.reduceStockForItems(tx, dto.outlet_id, resolvedItems, transaction.id, cashierId);
+
+          // ── 11. Pembayaran, kasbon, poin loyalty ──
+          await this.finalizePayment(tx, businessId, { id: transaction.id, total: pricing.total }, dto.payments, customer, settings);
+
+          // ── 12. Kembalikan transaksi lengkap ──
+          return tx.transaction.findUniqueOrThrow({
+            where: { id: transaction.id },
+            include: TRANSACTION_INCLUDE,
+          });
+        },
+        { maxWait: 10_000, timeout: 20_000 },
+      ),
     );
   }
 
   async getTransactionById(businessId: string, id: string) {
     const transaction = await this.prisma.transaction.findFirst({
       where: { id, business_id: businessId },
-      include: { items: { include: { modifiers: true } }, payments: true, taxes: true },
+      include: TRANSACTION_INCLUDE,
     });
     if (!transaction) throw new NotFoundException("Transaksi tidak ditemukan");
     return transaction;
+  }
+
+  // =====================================================================
+  // QUOTE — pratinjau harga tanpa menyimpan apa pun. Memakai priceCheckout
+  // yang sama dengan createTransaction/closeBill, jadi total yang dilihat
+  // kasir = total yang akan disimpan (selama data master tidak berubah di
+  // antaranya — angka final tetap dihitung ulang dengan kunci saat simpan).
+  // =====================================================================
+
+  async quoteTransaction(businessId: string, dto: QuoteTransactionDto): Promise<CheckoutQuote> {
+    const db = this.prisma;
+    const outlet = await db.outlet.findFirst({
+      where: { id: dto.outlet_id, business_id: businessId, deleted_at: null },
+    });
+    if (!outlet) throw new NotFoundException("Outlet tidak ditemukan");
+
+    if (dto.customer_id) {
+      const customer = await db.customer.findFirst({
+        where: { id: dto.customer_id, business_id: businessId, deleted_at: null },
+      });
+      if (!customer) throw new NotFoundException("Pelanggan tidak ditemukan");
+    }
+
+    const settings = await db.businessSetting.findFirst({ where: { business_id: businessId } });
+    const timeZone = await this.businessTimeZone(db, businessId);
+    const { resolvedItems, subtotal } = await this.resolveLineItems(db, businessId, dto.outlet_id, dto.items);
+
+    const pricing = await this.priceCheckout(db, businessId, {
+      subtotal,
+      lines: resolvedItems,
+      voucherCode: dto.voucher_code,
+      customerId: dto.customer_id ?? null,
+      deliveryFee: dto.delivery_fee,
+      rounding: settings?.rounding ?? "none",
+      timeZone,
+      lockVoucher: false,
+    });
+    return this.toQuote(subtotal, pricing);
+  }
+
+  async quoteBill(businessId: string, transactionId: string, dto: QuoteBillDto): Promise<CheckoutQuote> {
+    const db = this.prisma;
+    const bill = await db.transaction.findFirst({ where: { id: transactionId, business_id: businessId } });
+    if (!bill) throw new NotFoundException("Transaksi tidak ditemukan");
+    if (bill.status !== "open") throw new BadRequestException("Bill ini sudah ditutup atau bukan open bill");
+
+    const settings = await db.businessSetting.findFirst({ where: { business_id: businessId } });
+    const timeZone = await this.businessTimeZone(db, businessId);
+    const subtotal = new Prisma.Decimal(bill.subtotal);
+
+    const pricing = await this.priceCheckout(db, businessId, {
+      subtotal,
+      lines: await this.billDiscountLines(db, bill.id),
+      voucherCode: dto.voucher_code,
+      customerId: bill.customer_id,
+      deliveryFee: bill.delivery_fee,
+      rounding: settings?.rounding ?? "none",
+      timeZone,
+      lockVoucher: false,
+    });
+    return this.toQuote(subtotal, pricing);
   }
 
   // =====================================================================
@@ -206,88 +319,92 @@ export class SalesService {
   // =====================================================================
 
   async openBill(businessId: string, cashierId: string, dto: OpenBillDto) {
-    return this.prisma.$transaction(
-      async (tx) => {
-        const outlet = await tx.outlet.findFirst({
-          where: { id: dto.outlet_id, business_id: businessId, deleted_at: null },
-        });
-        if (!outlet) throw new NotFoundException("Outlet tidak ditemukan");
+    return this.withIdempotency(businessId, dto.outlet_id, dto.client_ref, () =>
+      this.prisma.$transaction(
+        async (tx) => {
+          const outlet = await tx.outlet.findFirst({
+            where: { id: dto.outlet_id, business_id: businessId, deleted_at: null },
+          });
+          if (!outlet) throw new NotFoundException("Outlet tidak ditemukan");
 
-        const customer = dto.customer_id
-          ? await tx.customer.findFirst({ where: { id: dto.customer_id, business_id: businessId, deleted_at: null } })
-          : null;
-        if (dto.customer_id && !customer) throw new NotFoundException("Pelanggan tidak ditemukan");
+          const customer = dto.customer_id
+            ? await tx.customer.findFirst({ where: { id: dto.customer_id, business_id: businessId, deleted_at: null } })
+            : null;
+          if (dto.customer_id && !customer) throw new NotFoundException("Pelanggan tidak ditemukan");
 
-        let tableId: string | null = null;
-        if (dto.dining_table_id) {
-          // Kunci baris meja supaya dua kasir tidak bisa buka bill di meja yang
-          // sama secara bersamaan (race condition serupa penguncian inventory).
-          const tableRows = await tx.$queryRaw<Array<{ id: string; status: string }>>`
-            SELECT id, status FROM dining_tables
-            WHERE id = ${dto.dining_table_id} AND outlet_id = ${dto.outlet_id}
-            FOR UPDATE
-          `;
-          const table = tableRows[0];
-          if (!table) throw new NotFoundException("Meja tidak ditemukan");
-          if (table.status === "occupied") {
-            throw new ConflictException("Meja ini sudah dipakai bill lain yang masih terbuka");
+          let tableId: string | null = null;
+          if (dto.dining_table_id) {
+            // Kunci baris meja supaya dua kasir tidak bisa buka bill di meja yang
+            // sama secara bersamaan (race condition serupa penguncian inventory).
+            const tableRows = await tx.$queryRaw<Array<{ id: string; status: string }>>`
+              SELECT id, status FROM dining_tables
+              WHERE id = ${dto.dining_table_id} AND outlet_id = ${dto.outlet_id}
+              FOR UPDATE
+            `;
+            const table = tableRows[0];
+            if (!table) throw new NotFoundException("Meja tidak ditemukan");
+            if (table.status === "occupied") {
+              throw new ConflictException("Meja ini sudah dipakai bill lain yang masih terbuka");
+            }
+            tableId = table.id;
           }
-          tableId = table.id;
-        }
 
-        const openCashDrawerSession = await tx.cashDrawerSession.findFirst({
-          where: { outlet_id: dto.outlet_id, status: "open" },
-        });
+          const openCashDrawerSession = await tx.cashDrawerSession.findFirst({
+            where: { outlet_id: dto.outlet_id, status: "open" },
+          });
 
-        const items = dto.items ?? [];
-        const { resolvedItems, subtotal, totalCost } =
-          items.length > 0
-            ? await this.resolveLineItems(tx, businessId, dto.outlet_id, items)
-            : { resolvedItems: [] as ResolvedItem[], subtotal: new Prisma.Decimal(0), totalCost: new Prisma.Decimal(0) };
+          const items = dto.items ?? [];
+          const { resolvedItems, subtotal, totalCost } =
+            items.length > 0
+              ? await this.resolveLineItems(tx, businessId, dto.outlet_id, items)
+              : { resolvedItems: [] as ResolvedItem[], subtotal: new Prisma.Decimal(0), totalCost: new Prisma.Decimal(0) };
 
-        const settings = await tx.businessSetting.findFirst({ where: { business_id: businessId } });
-        const { taxTotal, serviceChargeTotal, taxRows } = await this.computeTaxes(tx, businessId, subtotal);
-        const rawTotal = subtotal.plus(taxTotal).plus(serviceChargeTotal);
-        const { total, rounding_adjustment } = applyRounding(rawTotal, settings?.rounding ?? "none");
+          const settings = await tx.businessSetting.findFirst({ where: { business_id: businessId } });
+          const timeZone = await this.businessTimeZone(tx, businessId);
+          const { taxTotal, serviceChargeTotal, taxRows } = await this.computeTaxes(tx, businessId, subtotal);
+          const rawTotal = subtotal.plus(taxTotal).plus(serviceChargeTotal);
+          const { total, rounding_adjustment } = applyRounding(rawTotal, settings?.rounding ?? "none");
 
-        const transactionNumber = await this.nextTransactionNumber(tx, businessId, dto.outlet_id, outlet.id);
+          const transactionNumber = await this.nextTransactionNumber(tx, businessId, dto.outlet_id, timeZone);
 
-        const transaction = await tx.transaction.create({
-          data: {
-            business_id: businessId,
-            outlet_id: dto.outlet_id,
-            cashier_id: cashierId,
-            customer_id: customer?.id,
-            dining_table_id: tableId,
-            cash_drawer_session_id: openCashDrawerSession?.id,
-            transaction_number: transactionNumber,
-            order_type: dto.order_type ?? (tableId ? "dine_in" : "retail"),
-            status: "open",
-            guest_count: dto.guest_count,
-            subtotal,
-            tax_total: taxTotal,
-            service_charge_total: serviceChargeTotal,
-            rounding_adjustment,
-            total,
-            total_cost: totalCost,
-            notes: dto.notes,
-          },
-        });
+          const transaction = await tx.transaction.create({
+            data: {
+              business_id: businessId,
+              outlet_id: dto.outlet_id,
+              cashier_id: cashierId,
+              customer_id: customer?.id,
+              dining_table_id: tableId,
+              cash_drawer_session_id: openCashDrawerSession?.id,
+              transaction_number: transactionNumber,
+              client_ref: dto.client_ref,
+              order_type: dto.order_type ?? (tableId ? "dine_in" : "retail"),
+              status: "open",
+              guest_count: dto.guest_count,
+              subtotal,
+              tax_total: taxTotal,
+              service_charge_total: serviceChargeTotal,
+              rounding_adjustment,
+              total,
+              total_cost: totalCost,
+              notes: dto.notes,
+            },
+          });
 
-        await this.insertTransactionItems(tx, transaction.id, resolvedItems);
-        await this.insertTransactionTaxes(tx, transaction.id, taxRows);
-        await this.reduceStockForItems(tx, dto.outlet_id, resolvedItems, transaction.id, cashierId);
+          await this.insertTransactionItems(tx, transaction.id, resolvedItems);
+          await this.insertTransactionTaxes(tx, transaction.id, taxRows);
+          await this.reduceStockForItems(tx, dto.outlet_id, resolvedItems, transaction.id, cashierId);
 
-        if (tableId) {
-          await tx.diningTable.update({ where: { id: tableId }, data: { status: "occupied" } });
-        }
+          if (tableId) {
+            await tx.diningTable.update({ where: { id: tableId }, data: { status: "occupied" } });
+          }
 
-        return tx.transaction.findUniqueOrThrow({
-          where: { id: transaction.id },
-          include: { items: { include: { modifiers: true } }, payments: true, taxes: true },
-        });
-      },
-      { maxWait: 10_000, timeout: 20_000 },
+          return tx.transaction.findUniqueOrThrow({
+            where: { id: transaction.id },
+            include: TRANSACTION_INCLUDE,
+          });
+        },
+        { maxWait: 10_000, timeout: 20_000 },
+      ),
     );
   }
 
@@ -347,7 +464,7 @@ export class SalesService {
             total,
             total_cost: cumulativeCost,
           },
-          include: { items: { include: { modifiers: true } }, payments: true, taxes: true },
+          include: TRANSACTION_INCLUDE,
         });
       },
       { maxWait: 10_000, timeout: 20_000 },
@@ -361,14 +478,14 @@ export class SalesService {
           Array<{
             id: string;
             status: string;
+            outlet_id: string;
             subtotal: Prisma.Decimal | string;
             delivery_fee: Prisma.Decimal | string;
-            total: Prisma.Decimal | string;
             customer_id: string | null;
             dining_table_id: string | null;
           }>
         >`
-          SELECT id, status, subtotal, delivery_fee, total, customer_id, dining_table_id FROM transactions
+          SELECT id, status, outlet_id, subtotal, delivery_fee, customer_id, dining_table_id FROM transactions
           WHERE id = ${transactionId} AND business_id = ${businessId}
           FOR UPDATE
         `;
@@ -380,56 +497,53 @@ export class SalesService {
           ? await tx.customer.findFirst({ where: { id: locked.customer_id, business_id: businessId } })
           : null;
         const settings = await tx.businessSetting.findFirst({ where: { business_id: businessId } });
+        const timeZone = await this.businessTimeZone(tx, businessId);
+
+        // Uang diterima SAAT bill ditutup — tautkan ke laci yang terbuka sekarang
+        // (bisa beda shift dari saat bill dibuka), supaya saldo laci yang
+        // diharapkan saat tutup shift cocok dengan uang fisik di laci.
+        const cashDrawerSessionId = await this.lockOpenDrawerSession(tx, locked.outlet_id);
 
         // ── Diskon otomatis + voucher (opsional) dievaluasi di titik checkout ini,
         // atas seluruh item yang sudah terkumpul di bill sampai saat ditutup. ──
         const subtotal = new Prisma.Decimal(locked.subtotal);
-        const persistedItems = await tx.transactionItem.findMany({
-          where: { transaction_id: transactionId },
-          include: { item: true },
-        });
-        const eligibleLines: DiscountEligibleLine[] = persistedItems.map((ti) => ({
-          item_id: ti.item_id ?? "",
-          category_id: ti.item?.category_id ?? null,
-          subtotal: new Prisma.Decimal(ti.subtotal),
-        }));
-        const { discountTotal: autoDiscountTotal, discountRows } = await this.resolveAutoDiscounts(
-          tx,
-          businessId,
+        const pricing = await this.priceCheckout(tx, businessId, {
           subtotal,
-          eligibleLines,
-        );
-        const remainingAfterAuto = subtotal.minus(autoDiscountTotal);
-        const voucherResult = dto.voucher_code
-          ? await this.resolveVoucher(tx, businessId, dto.voucher_code, subtotal, remainingAfterAuto, locked.customer_id)
-          : null;
-        const discountTotal = autoDiscountTotal.plus(voucherResult?.amount ?? new Prisma.Decimal(0));
-        const effectiveSubtotal = subtotal.minus(discountTotal);
-
-        const { taxTotal, serviceChargeTotal, taxRows } = await this.computeTaxes(tx, businessId, effectiveSubtotal);
-        const deliveryFee = new Prisma.Decimal(locked.delivery_fee);
-        const rawTotal = effectiveSubtotal.plus(taxTotal).plus(serviceChargeTotal).plus(deliveryFee);
-        const { total, rounding_adjustment } = applyRounding(rawTotal, settings?.rounding ?? "none");
+          lines: await this.billDiscountLines(tx, transactionId),
+          voucherCode: dto.voucher_code,
+          customerId: locked.customer_id,
+          deliveryFee: locked.delivery_fee,
+          rounding: settings?.rounding ?? "none",
+          timeZone,
+          lockVoucher: true,
+        });
 
         await tx.transactionTax.deleteMany({ where: { transaction_id: transactionId } });
-        await this.insertTransactionTaxes(tx, transactionId, taxRows);
-        await this.insertTransactionDiscounts(tx, transactionId, discountRows);
-        if (voucherResult) {
-          await this.applyVoucherRedemption(tx, transactionId, locked.customer_id, voucherResult.voucher_id, voucherResult.amount);
+        await this.insertTransactionTaxes(tx, transactionId, pricing.taxRows);
+        await this.insertTransactionDiscounts(tx, transactionId, pricing.discountRows);
+        if (pricing.voucher) {
+          await this.applyVoucherRedemption(
+            tx,
+            transactionId,
+            locked.customer_id,
+            pricing.voucher.voucher_id,
+            pricing.voucher.amount,
+          );
         }
 
         await tx.transaction.update({
           where: { id: transactionId },
           data: {
-            discount_total: discountTotal,
-            tax_total: taxTotal,
-            service_charge_total: serviceChargeTotal,
-            rounding_adjustment,
-            total,
+            discount_total: pricing.discountTotal,
+            tax_total: pricing.taxTotal,
+            service_charge_total: pricing.serviceChargeTotal,
+            rounding_adjustment: pricing.rounding_adjustment,
+            total: pricing.total,
+            cash_drawer_session_id: cashDrawerSessionId,
           },
         });
 
-        await this.finalizePayment(tx, businessId, { id: transactionId, total }, dto.payments, customer, settings, {
+        await this.finalizePayment(tx, businessId, { id: transactionId, total: pricing.total }, dto.payments, customer, settings, {
           status: "completed",
           completed_at: new Date(),
         });
@@ -440,7 +554,7 @@ export class SalesService {
 
         return tx.transaction.findUniqueOrThrow({
           where: { id: transactionId },
-          include: { items: { include: { modifiers: true } }, payments: true, taxes: true },
+          include: TRANSACTION_INCLUDE,
         });
       },
       { maxWait: 10_000, timeout: 20_000 },
@@ -456,8 +570,145 @@ export class SalesService {
   }
 
   // =====================================================================
-  // Helper bersama — dipakai createTransaction, openBill, addBillItems, closeBill
+  // Helper bersama — dipakai createTransaction, openBill, addBillItems, closeBill, quote
   // =====================================================================
+
+  /**
+   * Bungkus operasi pembuat transaksi dengan idempotency key (client_ref):
+   * - client_ref sudah pernah tersimpan → kembalikan transaksi itu, operasi tidak dijalankan.
+   * - Dua request identik balapan → yang kalah kena unique violation
+   *   (business_id, client_ref) setelah yang menang commit, seluruh
+   *   $transaction-nya di-rollback, lalu dikembalikan transaksi milik pemenang.
+   */
+  private async withIdempotency(
+    businessId: string,
+    outletId: string,
+    clientRef: string | undefined,
+    run: () => Promise<TransactionWithRelations>,
+  ): Promise<TransactionWithRelations> {
+    if (!clientRef) return run();
+
+    const existing = await this.findByClientRef(businessId, outletId, clientRef);
+    if (existing) return existing;
+
+    try {
+      return await run();
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+        const winner = await this.findByClientRef(businessId, outletId, clientRef);
+        if (winner) return winner;
+      }
+      throw err;
+    }
+  }
+
+  private async findByClientRef(businessId: string, outletId: string, clientRef: string) {
+    const existing = await this.prisma.transaction.findUnique({
+      where: { business_id_client_ref: { business_id: businessId, client_ref: clientRef } },
+      include: TRANSACTION_INCLUDE,
+    });
+    if (existing && existing.outlet_id !== outletId) {
+      throw new ConflictException("client_ref sudah dipakai untuk transaksi di outlet lain");
+    }
+    return existing;
+  }
+
+  /**
+   * Sesi laci yang sedang terbuka di outlet, dikunci FOR SHARE sampai transaksi
+   * commit. Tutup laci (FOR NO KEY UPDATE) jadi menunggu penjualan yang sedang
+   * berjalan, dan penjualan yang datang sesudahnya melihat laci sudah tertutup —
+   * tidak ada uang yang "nyangkut" di sesi yang saldo akhirnya sudah dihitung.
+   * FOR SHARE antar-penjualan tidak saling menunggu.
+   */
+  private async lockOpenDrawerSession(tx: Prisma.TransactionClient, outletId: string): Promise<string | null> {
+    const rows = await tx.$queryRaw<Array<{ id: string }>>`
+      SELECT id FROM cash_drawer_sessions
+      WHERE outlet_id = ${outletId} AND status = 'open'
+      FOR SHARE
+    `;
+    return rows[0]?.id ?? null;
+  }
+
+  private async businessTimeZone(tx: Prisma.TransactionClient, businessId: string): Promise<string> {
+    const business = await tx.business.findUnique({ where: { id: businessId }, select: { timezone: true } });
+    return resolveTimeZone(business?.timezone);
+  }
+
+  /**
+   * Harga di titik checkout, dalam urutan: diskon otomatis → voucher (atas sisa)
+   * → pajak & service charge (atas subtotal setelah diskon) → ongkir → pembulatan.
+   * lockVoucher=true di jalur simpan (createTransaction/closeBill); false untuk quote.
+   */
+  private async priceCheckout(
+    tx: Prisma.TransactionClient,
+    businessId: string,
+    input: {
+      subtotal: Prisma.Decimal;
+      lines: DiscountEligibleLine[];
+      voucherCode?: string;
+      customerId: string | null;
+      deliveryFee?: Prisma.Decimal | number | string | null;
+      rounding: rounding_mode;
+      timeZone: string;
+      lockVoucher: boolean;
+    },
+  ): Promise<CheckoutPricing> {
+    const { discountTotal: autoDiscountTotal, discountRows } = await this.resolveAutoDiscounts(
+      tx,
+      businessId,
+      input.subtotal,
+      input.lines,
+      input.timeZone,
+    );
+    const remainingAfterAuto = input.subtotal.minus(autoDiscountTotal);
+    const voucher = input.voucherCode
+      ? await this.resolveVoucher(
+          tx,
+          businessId,
+          input.voucherCode,
+          input.subtotal,
+          remainingAfterAuto,
+          input.customerId,
+          input.lockVoucher,
+        )
+      : null;
+    const discountTotal = autoDiscountTotal.plus(voucher?.amount ?? 0);
+    const effectiveSubtotal = input.subtotal.minus(discountTotal);
+
+    const { taxTotal, serviceChargeTotal, taxRows } = await this.computeTaxes(tx, businessId, effectiveSubtotal);
+    const deliveryFee = new Prisma.Decimal(input.deliveryFee ?? 0);
+    const rawTotal = effectiveSubtotal.plus(taxTotal).plus(serviceChargeTotal).plus(deliveryFee);
+    const { total, rounding_adjustment } = applyRounding(rawTotal, input.rounding);
+
+    return { discountRows, voucher, discountTotal, taxRows, taxTotal, serviceChargeTotal, deliveryFee, total, rounding_adjustment };
+  }
+
+  private toQuote(subtotal: Prisma.Decimal, pricing: CheckoutPricing): CheckoutQuote {
+    return {
+      subtotal,
+      discount_total: pricing.discountTotal,
+      discounts: pricing.discountRows.map((d) => ({ name: d.discount_name_snapshot, amount: d.amount_applied })),
+      voucher: pricing.voucher ? { code: pricing.voucher.code, amount: pricing.voucher.amount } : null,
+      tax_total: pricing.taxTotal,
+      service_charge_total: pricing.serviceChargeTotal,
+      delivery_fee: pricing.deliveryFee,
+      rounding_adjustment: pricing.rounding_adjustment,
+      total: pricing.total,
+    };
+  }
+
+  /** Baris open bill yang sudah tersimpan, dalam bentuk yang dibutuhkan evaluasi diskon. */
+  private async billDiscountLines(tx: Prisma.TransactionClient, transactionId: string): Promise<DiscountEligibleLine[]> {
+    const persistedItems = await tx.transactionItem.findMany({
+      where: { transaction_id: transactionId },
+      select: { item_id: true, subtotal: true, item: { select: { category_id: true } } },
+    });
+    return persistedItems.map((ti) => ({
+      item_id: ti.item_id ?? "",
+      category_id: ti.item?.category_id ?? null,
+      subtotal: new Prisma.Decimal(ti.subtotal),
+    }));
+  }
 
   /** Resolusi harga & data snapshot tiap baris item. Tidak menyentuh stok. */
   private async resolveLineItems(
@@ -544,7 +795,8 @@ export class SalesService {
       );
       unitPrice = unitPrice.plus(modifierAdjustment);
 
-      const lineSubtotal = unitPrice.times(quantity);
+      // Dibulatkan per baris (mis. harga/kg × 0,333 kg) — subtotal = jumlah baris di struk.
+      const lineSubtotal = roundMoney(unitPrice.times(quantity));
       subtotal = subtotal.plus(lineSubtotal);
       totalCost = totalCost.plus(unitCost.times(quantity));
 
@@ -649,7 +901,7 @@ export class SalesService {
     let serviceChargeTotal = new Prisma.Decimal(0);
     const taxRows: TaxRow[] = [];
     for (const tax of activeTaxes) {
-      const amount = subtotal.times(tax.rate).dividedBy(100);
+      const amount = roundMoney(subtotal.times(tax.rate).dividedBy(100));
       if (tax.tax_kind === "service_charge") {
         serviceChargeTotal = serviceChargeTotal.plus(amount);
       } else {
@@ -662,17 +914,19 @@ export class SalesService {
 
   /**
    * Promo otomatis terjadwal (PRD F-12) — semua diskon aktif milik business
-   * yang sedang berlaku (tanggal + jam + hari) dievaluasi dan ditumpuk
-   * (stacking), masing-masing dipotong dari sisa subtotal secara berurutan
-   * supaya totalnya tidak pernah melebihi subtotal itu sendiri.
+   * yang sedang berlaku (tanggal + jam + hari, dalam zona waktu usaha)
+   * dievaluasi dan ditumpuk (stacking), masing-masing dipotong dari sisa
+   * subtotal secara berurutan supaya totalnya tidak pernah melebihi subtotal.
    */
   private async resolveAutoDiscounts(
     tx: Prisma.TransactionClient,
     businessId: string,
     subtotal: Prisma.Decimal,
     lines: DiscountEligibleLine[],
+    timeZone: string,
   ): Promise<{ discountTotal: Prisma.Decimal; discountRows: DiscountRow[] }> {
     const now = new Date();
+    const local = zonedParts(now, timeZone);
     const activeDiscounts = await tx.discount.findMany({
       where: {
         business_id: businessId,
@@ -690,12 +944,12 @@ export class SalesService {
 
       const conditions = (discount.conditions ?? {}) as Record<string, unknown>;
 
+      // Hari & jam promo dibaca sebagai jam dinding usaha, bukan jam server (UTC di Docker).
       if (Array.isArray(conditions.days_of_week) && conditions.days_of_week.length > 0) {
-        if (!conditions.days_of_week.includes(now.getDay())) continue;
+        if (!conditions.days_of_week.includes(local.dayOfWeek)) continue;
       }
-      const nowHm = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
-      if (typeof conditions.hour_start === "string" && nowHm < conditions.hour_start) continue;
-      if (typeof conditions.hour_end === "string" && nowHm > conditions.hour_end) continue;
+      if (typeof conditions.hour_start === "string" && local.hm < conditions.hour_start) continue;
+      if (typeof conditions.hour_end === "string" && local.hm > conditions.hour_end) continue;
 
       let eligibleAmount: Prisma.Decimal;
       if (discount.scope === "category") {
@@ -718,10 +972,11 @@ export class SalesService {
       eligibleAmount = Prisma.Decimal.min(eligibleAmount, remaining);
       if (eligibleAmount.lessThanOrEqualTo(0)) continue;
 
-      let amount =
+      let amount = roundMoney(
         discount.discount_type === "percentage"
           ? eligibleAmount.times(discount.value).dividedBy(100)
-          : Prisma.Decimal.min(discount.value, eligibleAmount);
+          : Prisma.Decimal.min(discount.value, eligibleAmount),
+      );
       amount = Prisma.Decimal.min(amount, remaining);
       if (amount.lessThanOrEqualTo(0)) continue;
 
@@ -746,8 +1001,21 @@ export class SalesService {
     rawSubtotal: Prisma.Decimal,
     remainingSubtotal: Prisma.Decimal,
     customerId: string | null,
-  ): Promise<{ voucher_id: string; amount: Prisma.Decimal }> {
+    lock: boolean,
+  ): Promise<VoucherResult> {
     const code = rawCode.trim().toUpperCase();
+    if (lock) {
+      // Kunci baris voucher sampai transaksi commit — cek usage_limit &
+      // per_customer_limit lalu increment usage_count harus atomik terhadap
+      // checkout paralel (outlet lain / closeBill), kalau tidak batas terlampaui.
+      // NO KEY UPDATE (bukan UPDATE) supaya tidak bentrok dengan kunci FK
+      // (FOR KEY SHARE) yang diambil saat insert voucher_redemptions.
+      await tx.$queryRaw`
+        SELECT id FROM vouchers
+        WHERE business_id = ${businessId} AND code = ${code}
+        FOR NO KEY UPDATE
+      `;
+    }
     const voucher = await tx.voucher.findUnique({ where: { business_id_code: { business_id: businessId, code } } });
     if (!voucher) throw new NotFoundException(`Voucher "${code}" tidak ditemukan`);
 
@@ -780,9 +1048,9 @@ export class SalesService {
     if (voucher.discount_type === "percentage" && voucher.max_discount) {
       amount = Prisma.Decimal.min(amount, voucher.max_discount);
     }
-    amount = Prisma.Decimal.min(amount, remainingSubtotal);
+    amount = roundMoney(Prisma.Decimal.min(amount, remainingSubtotal));
 
-    return { voucher_id: voucher.id, amount };
+    return { voucher_id: voucher.id, code, amount };
   }
 
   private async insertTransactionDiscounts(tx: Prisma.TransactionClient, transactionId: string, rows: DiscountRow[]) {
@@ -860,10 +1128,12 @@ export class SalesService {
     tx: Prisma.TransactionClient,
     businessId: string,
     outletId: string,
-    outletDbId: string,
+    timeZone: string,
   ): Promise<string> {
-    const period = new Date();
-    period.setHours(0, 0, 0, 0);
+    // Tanggal di nomor struk & reset harian counter mengikuti tanggal lokal usaha
+    // (bukan jam server — di Docker/UTC hari baru akan dimulai jam 07.00 WIB).
+    const { date } = zonedParts(new Date(), timeZone);
+    const period = dateOnly(date);
     const counter = await tx.documentCounter.upsert({
       where: {
         business_id_outlet_id_doc_type_period: {
@@ -876,17 +1146,23 @@ export class SalesService {
       create: { business_id: businessId, outlet_id: outletId, doc_type: "transaction", period, last_number: 1 },
       update: { last_number: { increment: 1 } },
     });
-    const datePart = period.toISOString().slice(0, 10).replace(/-/g, "");
-    const outletShort = outletDbId.replace(/-/g, "").slice(0, 6).toUpperCase();
+    const datePart = date.replace(/-/g, "");
+    const outletShort = outletId.replace(/-/g, "").slice(0, 6).toUpperCase();
     return `INV-${outletShort}-${datePart}-${String(counter.last_number).padStart(4, "0")}`;
   }
 
   /**
    * Resolusi pembayaran, kasbon, dan poin loyalty terhadap sebuah transaksi
-   * yang SUDAH ADA (baik baru dibuat oleh createTransaction/openBill, maupun
-   * open bill yang sedang ditutup oleh closeBill). Meng-update baris
-   * transactions dengan amount_paid/change_due (+ field tambahan di extraData,
-   * mis. status/completed_at untuk closeBill).
+   * yang SUDAH ADA (baik baru dibuat oleh createTransaction, maupun open bill
+   * yang sedang ditutup oleh closeBill). Meng-update baris transactions dengan
+   * amount_paid/change_due (+ field tambahan di extraData, mis. status/completed_at
+   * untuk closeBill).
+   *
+   * Aturan uang:
+   * - Kembalian hanya bisa diberikan dari uang TUNAI di laci → non-tunai (QRIS,
+   *   transfer, kartu) + kasbon tidak boleh melebihi total.
+   * - Kasbon hanya menutup SISA tagihan → bila ada porsi kasbon, pembayaran harus
+   *   pas (tanpa kembalian); kalau tidak, kasbon berubah jadi pinjaman tunai.
    */
   private async finalizePayment(
     tx: Prisma.TransactionClient,
@@ -896,8 +1172,9 @@ export class SalesService {
     customer: { id: string; credit_limit: Prisma.Decimal } | null,
     settings: { enable_kasbon: boolean; enable_loyalty: boolean } | null,
     extraData: Record<string, unknown> = {},
-  ): Promise<{ amountPaidCash: Prisma.Decimal; changeDue: Prisma.Decimal }> {
-    let amountPaidCash = new Prisma.Decimal(0);
+  ): Promise<{ amountPaid: Prisma.Decimal; changeDue: Prisma.Decimal }> {
+    let cashTendered = new Prisma.Decimal(0);
+    let nonCashPaid = new Prisma.Decimal(0);
     let amountReceivable = new Prisma.Decimal(0);
     const paymentRows: Array<{
       payment_channel_id: string;
@@ -928,19 +1205,42 @@ export class SalesService {
       });
 
       if (isReceivable) amountReceivable = amountReceivable.plus(amount);
-      else amountPaidCash = amountPaidCash.plus(amount);
+      else if (channel.channel_type === "cash") cashTendered = cashTendered.plus(amount);
+      else nonCashPaid = nonCashPaid.plus(amount);
     }
 
-    const totalCovered = amountPaidCash.plus(amountReceivable);
+    const amountPaid = cashTendered.plus(nonCashPaid);
+    const totalCovered = amountPaid.plus(amountReceivable);
     if (totalCovered.lessThan(transaction.total)) {
       throw new BadRequestException(
         `Total pembayaran (${totalCovered.toFixed(2)}) kurang dari total transaksi (${transaction.total.toFixed(2)})`,
       );
     }
 
+    const nonCashAndReceivable = nonCashPaid.plus(amountReceivable);
+    if (nonCashAndReceivable.greaterThan(transaction.total)) {
+      throw new BadRequestException(
+        `Pembayaran non-tunai/kasbon (${nonCashAndReceivable.toFixed(2)}) melebihi total transaksi (${transaction.total.toFixed(2)}) — kembalian hanya bisa dari tunai`,
+      );
+    }
+
+    if (amountReceivable.greaterThan(0) && totalCovered.greaterThan(transaction.total)) {
+      const remaining = Prisma.Decimal.max(transaction.total.minus(amountPaid), 0);
+      throw new BadRequestException(
+        `Kasbon harus pas sebesar sisa tagihan (${remaining.toFixed(2)}) — kasbon tidak boleh menghasilkan kembalian`,
+      );
+    }
+
     if (amountReceivable.greaterThan(0)) {
       if (!customer) throw new BadRequestException("Kasbon memerlukan customer_id");
       if (!settings?.enable_kasbon) throw new BadRequestException("Fitur kasbon tidak aktif untuk bisnis ini");
+
+      // Kunci baris pelanggan supaya dua kasbon paralel untuk pelanggan yang sama
+      // (kasir di outlet lain, atau closeBill) tidak sama-sama lolos cek batas kredit.
+      // WAJIB NO KEY UPDATE: transaksi ini sudah memegang FOR KEY SHARE atas baris
+      // pelanggan (cek FK saat insert transactions.customer_id) — FOR UPDATE akan
+      // menunggu KEY SHARE milik transaksi paralel, dan sebaliknya → deadlock.
+      await tx.$queryRaw`SELECT id FROM customers WHERE id = ${customer.id} FOR NO KEY UPDATE`;
 
       const outstandingAgg = await tx.customerReceivable.aggregate({
         where: { customer_id: customer.id, status: { in: ["outstanding", "partially_paid"] } },
@@ -957,11 +1257,12 @@ export class SalesService {
       }
     }
 
-    const changeDue = totalCovered.greaterThan(transaction.total) ? totalCovered.minus(transaction.total) : new Prisma.Decimal(0);
+    // Setelah aturan di atas: 0 ≤ kembalian ≤ uang tunai yang diterima.
+    const changeDue = totalCovered.minus(transaction.total);
 
     await tx.transaction.update({
       where: { id: transaction.id },
-      data: { amount_paid: amountPaidCash, change_due: changeDue, ...extraData },
+      data: { amount_paid: amountPaid, change_due: changeDue, ...extraData },
     });
 
     for (const p of paymentRows) {
@@ -1016,16 +1317,18 @@ export class SalesService {
       }
     }
 
-    return { amountPaidCash, changeDue };
+    return { amountPaid, changeDue };
   }
 
   /**
-   * Kurangi stok sesuai tipe item, mengunci baris inventory dengan
-   * SELECT ... FOR UPDATE agar aman dari race condition pembelian bersamaan.
-   * - item_type='bundle' → kurangi tiap komponen di bundle_components
-   * - use_recipe=true → kurangi tiap bahan di recipes
-   * - track_stock=true (item biasa) → kurangi inventory item itu sendiri
-   * - track_stock=false (jasa) → lewati
+   * Kurangi stok sesuai tipe item (lihat collectStockDeductions), mengunci baris
+   * inventory dengan SELECT ... FOR UPDATE agar aman dari pembelian bersamaan.
+   *
+   * Kunci diambil dalam urutan deterministik (item_id, variant_id), BUKAN urutan
+   * keranjang: dua transaksi yang menyentuh item yang sama dalam urutan berbeda
+   * ([A,B] vs [B,A] — mis. pelayan menambah pesanan open bill sementara kasir
+   * checkout) akan antre, bukan saling menunggu sampai Postgres membatalkan salah
+   * satunya karena deadlock.
    */
   private async reduceStockForItems(
     tx: Prisma.TransactionClient,
@@ -1034,121 +1337,121 @@ export class SalesService {
     transactionId: string,
     cashierId: string,
   ) {
+    const deductions = await this.collectStockDeductions(tx, lines);
+    deductions.sort(compareStockKey);
+    for (const deduction of deductions) {
+      await this.lockAndDecrementInventory(tx, outletId, deduction, transactionId, cashierId);
+    }
+  }
+
+  /**
+   * Daftar pengurangan stok per baris — belum menyentuh/mengunci inventory.
+   * - item_type='bundle' → kurangi tiap komponen di bundle_components
+   * - use_recipe=true → kurangi tiap bahan di recipes
+   * - track_stock=true (item biasa) → kurangi inventory item itu sendiri
+   * - track_stock=false (jasa) → lewati
+   * - modifier dengan ingredient_item_id → kurangi bahannya, independen dari item induk
+   */
+  private async collectStockDeductions(tx: Prisma.TransactionClient, lines: ResolvedItem[]): Promise<StockDeduction[]> {
+    const deductions: StockDeduction[] = [];
+
     for (const line of lines) {
       if (line.item_type === "bundle") {
         const components = await tx.bundleComponent.findMany({ where: { bundle_item_id: line.item_id } });
         for (const component of components) {
           const componentItem = await tx.item.findUniqueOrThrow({ where: { id: component.component_item_id } });
           if (!componentItem.track_stock) continue;
-          const qty = new Prisma.Decimal(component.quantity).times(line.quantity);
-          await this.lockAndDecrementInventory(
-            tx,
-            outletId,
-            component.component_item_id,
-            component.component_variant_id,
-            qty,
-            "sale_out",
-            transactionId,
-            cashierId,
-            componentItem.name,
-          );
+          deductions.push({
+            item_id: component.component_item_id,
+            variant_id: component.component_variant_id,
+            quantity: new Prisma.Decimal(component.quantity).times(line.quantity),
+            movement_type: "sale_out",
+            item_name: componentItem.name,
+          });
         }
       } else if (line.use_recipe) {
+        // Resep umum item (variant_id NULL) + resep khusus varian yang dipilih —
+        // tidak pernah resep milik varian lain.
         const recipes = await tx.recipe.findMany({
           where: {
             item_id: line.item_id,
-            OR: [{ variant_id: null }, { variant_id: line.variant_id ?? undefined }],
+            OR: line.variant_id ? [{ variant_id: null }, { variant_id: line.variant_id }] : [{ variant_id: null }],
           },
         });
         for (const recipe of recipes) {
           const ingredient = await tx.item.findUniqueOrThrow({ where: { id: recipe.ingredient_item_id } });
-          const qty = new Prisma.Decimal(recipe.quantity_used).times(line.quantity);
-          await this.lockAndDecrementInventory(
-            tx,
-            outletId,
-            recipe.ingredient_item_id,
-            null,
-            qty,
-            "recipe_out",
-            transactionId,
-            cashierId,
-            ingredient.name,
-          );
+          deductions.push({
+            item_id: recipe.ingredient_item_id,
+            variant_id: null,
+            quantity: new Prisma.Decimal(recipe.quantity_used).times(line.quantity),
+            movement_type: "recipe_out",
+            item_name: ingredient.name,
+          });
         }
       } else if (line.track_stock) {
-        await this.lockAndDecrementInventory(
-          tx,
-          outletId,
-          line.item_id,
-          line.variant_id,
-          line.quantity,
-          "sale_out",
-          transactionId,
-          cashierId,
-          line.item_name_snapshot,
-        );
+        deductions.push({
+          item_id: line.item_id,
+          variant_id: line.variant_id,
+          quantity: line.quantity,
+          movement_type: "sale_out",
+          item_name: line.item_name_snapshot,
+        });
       }
-      // track_stock=false (jasa) → lewati, tidak menyentuh stok item itu sendiri
 
-      // Modifier dengan ingredient_item_id (mis. topping keju) mengurangi
-      // stok bahannya sendiri, independen dari mekanisme stok item induk.
       for (const modifier of line.modifiers) {
         if (!modifier.ingredient_item_id || !modifier.ingredient_qty) continue;
         const ingredient = await tx.item.findUniqueOrThrow({ where: { id: modifier.ingredient_item_id } });
-        const qty = modifier.ingredient_qty.times(line.quantity);
-        await this.lockAndDecrementInventory(
-          tx,
-          outletId,
-          modifier.ingredient_item_id,
-          null,
-          qty,
-          "recipe_out",
-          transactionId,
-          cashierId,
-          ingredient.name,
-        );
+        deductions.push({
+          item_id: modifier.ingredient_item_id,
+          variant_id: null,
+          quantity: modifier.ingredient_qty.times(line.quantity),
+          movement_type: "recipe_out",
+          item_name: ingredient.name,
+        });
       }
     }
+
+    return deductions;
   }
 
   private async lockAndDecrementInventory(
     tx: Prisma.TransactionClient,
     outletId: string,
-    itemId: string,
-    variantId: string | null,
-    quantity: Prisma.Decimal,
-    movementType: "sale_out" | "recipe_out",
+    deduction: StockDeduction,
     transactionId: string,
     cashierId: string,
-    itemNameForError: string,
   ) {
     const rows = await tx.$queryRaw<InventoryLockRow[]>`
       SELECT id, quantity_on_hand FROM inventory
-      WHERE outlet_id = ${outletId} AND item_id = ${itemId} AND variant_id IS NOT DISTINCT FROM ${variantId}
+      WHERE outlet_id = ${outletId} AND item_id = ${deduction.item_id}
+        AND variant_id IS NOT DISTINCT FROM ${deduction.variant_id}
       FOR UPDATE
     `;
     const row = rows[0];
     if (!row) {
-      throw new BadRequestException(`Stok "${itemNameForError}" belum terdaftar di outlet ini`);
+      throw new BadRequestException(`Stok "${deduction.item_name}" belum terdaftar di outlet ini`);
     }
 
+    // Baris yang sama bisa muncul lebih dari sekali (mis. item yang sama di dua
+    // baris keranjang) — kunci ulang di transaksi yang sama tidak menunggu, dan
+    // quantity_on_hand yang dibaca sudah termasuk pengurangan sebelumnya.
     const current = new Prisma.Decimal(row.quantity_on_hand);
-    if (current.lessThan(quantity)) {
+    if (current.lessThan(deduction.quantity)) {
       throw new ConflictException(
-        `Stok "${itemNameForError}" tidak cukup (tersedia ${current.toFixed(3)}, diminta ${quantity.toFixed(3)})`,
+        `Stok "${deduction.item_name}" tidak cukup (tersedia ${current.toFixed(3)}, diminta ${deduction.quantity.toFixed(3)})`,
       );
     }
 
     await tx.inventory.update({
       where: { id: row.id },
-      data: { quantity_on_hand: current.minus(quantity) },
+      data: { quantity_on_hand: current.minus(deduction.quantity) },
     });
 
     await tx.stockMovement.create({
       data: {
         inventory_id: row.id,
-        movement_type: movementType,
-        quantity: quantity.negated(),
+        movement_type: deduction.movement_type,
+        quantity: deduction.quantity.negated(),
         reference_type: "transaction",
         reference_id: transactionId,
         created_by: cashierId,

@@ -1,5 +1,18 @@
 import { Prisma, rounding_mode } from "@bisnismu/db";
 
+/** Rupiah tidak memakai sen — setiap komponen uang dibulatkan ke rupiah penuh. */
+export const MONEY_SCALE = 0;
+
+/**
+ * Bulatkan satu komponen uang (subtotal baris, diskon, pajak, service charge)
+ * ke rupiah penuh, half-up. Dibulatkan PER KOMPONEN supaya total = jumlah angka
+ * yang tercetak di struk, dan sama persis dengan pratinjau di layar kasir
+ * (apps/web/src/lib/pos-pricing.ts memakai aturan yang sama).
+ */
+export function roundMoney(value: Prisma.Decimal): Prisma.Decimal {
+  return value.toDecimalPlaces(MONEY_SCALE, Prisma.Decimal.ROUND_HALF_UP);
+}
+
 /**
  * Menghitung TOTAL setelah pembulatan sesuai business_settings.rounding, dan
  * mengembalikan besaran adjustment-nya secara terpisah (schema menyimpan

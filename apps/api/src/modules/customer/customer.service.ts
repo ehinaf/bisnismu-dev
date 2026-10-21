@@ -55,6 +55,13 @@ export class CustomerService {
     await this.getOne(business_id, customerId);
 
     return this.prisma.$transaction(async (tx) => {
+      // Kunci baris piutang sampai commit: dua cicilan bersamaan tidak boleh
+      // sama-sama lolos cek "≤ sisa piutang" (hasilnya piutang lebih bayar).
+      await tx.$queryRaw`
+        SELECT id FROM customer_receivables
+        WHERE id = ${receivableId} AND customer_id = ${customerId} AND business_id = ${business_id}
+        FOR NO KEY UPDATE
+      `;
       const receivable = await tx.customerReceivable.findFirst({
         where: { id: receivableId, customer_id: customerId, business_id },
       });

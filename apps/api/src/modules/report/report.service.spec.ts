@@ -8,6 +8,7 @@ describe("ReportService", () => {
   let service: ReportService;
   let prisma: {
     outlet: { findFirst: jest.Mock };
+    business: { findUnique: jest.Mock };
     v_daily_sales: { findMany: jest.Mock };
     expense: { aggregate: jest.Mock; findMany: jest.Mock };
     transactionItem: { groupBy: jest.Mock };
@@ -17,6 +18,7 @@ describe("ReportService", () => {
   beforeEach(async () => {
     prisma = {
       outlet: { findFirst: jest.fn().mockResolvedValue({ id: "outlet-1", business_id: "biz-1" }) },
+      business: { findUnique: jest.fn().mockResolvedValue({ timezone: "Asia/Jakarta" }) },
       v_daily_sales: { findMany: jest.fn() },
       expense: { aggregate: jest.fn(), findMany: jest.fn() },
       transactionItem: { groupBy: jest.fn() },
@@ -126,18 +128,32 @@ describe("ReportService", () => {
       );
     });
 
-    it("`to` mencakup SELURUH hari itu untuk kolom TIMESTAMPTZ (created_at), bukan cuma sampai tengah malam", async () => {
+    it("`to` mencakup SELURUH hari itu (jam dinding usaha) untuk kolom TIMESTAMPTZ (created_at)", async () => {
       prisma.transactionItem.groupBy.mockResolvedValue([]);
 
       await service.topItems("biz-1", { outlet_id: "outlet-1", from: "2026-07-01", to: "2026-07-12" });
 
       const callArgs = prisma.transactionItem.groupBy.mock.calls[0][0];
       const createdAtFilter = callArgs.where.transaction.created_at;
-      // Transaksi jam 23:00 tanggal 12 Juli harus TETAP masuk — batas atas
-      // harus berupa `lt` awal tanggal 13, bukan `lte` tengah malam tanggal 12.
-      const lateOnLastDay = new Date("2026-07-12T23:00:00.000Z");
-      expect(lateOnLastDay < createdAtFilter.lt).toBe(true);
+      // Batas = 1 Jul 00:00 WIB s.d. sebelum 13 Jul 00:00 WIB (bukan tengah malam UTC).
+      expect(createdAtFilter.gte.toISOString()).toBe("2026-06-30T17:00:00.000Z");
+      expect(createdAtFilter.lt.toISOString()).toBe("2026-07-12T17:00:00.000Z");
       expect(createdAtFilter.lte).toBeUndefined();
+      // 12 Jul 23:00 WIB masuk; 13 Jul 00:30 WIB tidak; 1 Jul 00:30 WIB masuk.
+      expect(new Date("2026-07-12T16:00:00.000Z") < createdAtFilter.lt).toBe(true);
+      expect(new Date("2026-07-12T17:30:00.000Z") < createdAtFilter.lt).toBe(false);
+      expect(new Date("2026-06-30T17:30:00.000Z") >= createdAtFilter.gte).toBe(true);
+    });
+
+    it("memakai zona waktu usaha (WITA) untuk batas hari", async () => {
+      prisma.business.findUnique.mockResolvedValue({ timezone: "Asia/Makassar" });
+      prisma.payment.groupBy.mockResolvedValue([]);
+
+      await service.paymentMethods("biz-1", { outlet_id: "outlet-1", from: "2026-07-01", to: "2026-07-01" });
+
+      const createdAtFilter = prisma.payment.groupBy.mock.calls[0][0].where.transaction.created_at;
+      expect(createdAtFilter.gte.toISOString()).toBe("2026-06-30T16:00:00.000Z");
+      expect(createdAtFilter.lt.toISOString()).toBe("2026-07-01T16:00:00.000Z");
     });
   });
 });

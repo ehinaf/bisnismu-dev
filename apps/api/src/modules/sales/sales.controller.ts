@@ -7,6 +7,8 @@ import { CreateTransactionDto } from "./dto/create-transaction.dto";
 import { OpenBillDto } from "./dto/open-bill.dto";
 import { AddBillItemsDto } from "./dto/add-bill-items.dto";
 import { CloseBillDto } from "./dto/close-bill.dto";
+import { QuoteTransactionDto } from "./dto/quote-transaction.dto";
+import { QuoteBillDto } from "./dto/quote-bill.dto";
 
 @UseGuards(JwtAuthGuard)
 @Controller("transactions")
@@ -25,6 +27,13 @@ export class SalesController {
   }
 
   // Rute statis WAJIB di atas rute dinamis ":id" pada kedalaman path yang sama.
+  // Pratinjau total keranjang (diskon otomatis, voucher, pajak, pembulatan) tanpa menyimpan.
+  @Post("quote")
+  @HttpCode(HttpStatus.OK)
+  quote(@CurrentUser() user: JwtPayload, @Body() dto: QuoteTransactionDto) {
+    return this.salesService.quoteTransaction(user.business_id, dto);
+  }
+
   @Post("open")
   @HttpCode(HttpStatus.CREATED)
   openBill(@CurrentUser() user: JwtPayload, @Body() dto: OpenBillDto) {
@@ -45,6 +54,13 @@ export class SalesController {
   @HttpCode(HttpStatus.CREATED)
   addItems(@CurrentUser() user: JwtPayload, @Param("id") id: string, @Body() dto: AddBillItemsDto) {
     return this.salesService.addBillItems(user.business_id, user.sub, id, dto);
+  }
+
+  // Pratinjau total open bill bila ditutup sekarang — tampilkan sebelum input pembayaran.
+  @Post(":id/quote")
+  @HttpCode(HttpStatus.OK)
+  quoteBill(@CurrentUser() user: JwtPayload, @Param("id") id: string, @Body() dto: QuoteBillDto) {
+    return this.salesService.quoteBill(user.business_id, id, dto);
   }
 
   @Post(":id/close")

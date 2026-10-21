@@ -1,4 +1,4 @@
-import { IsEmail, IsOptional, IsString, MaxLength } from "class-validator";
+import { IsEmail, IsOptional, IsString, IsTimeZone, MaxLength } from "class-validator";
 
 export class UpdateBusinessDto {
   @IsOptional()
@@ -29,8 +29,10 @@ export class UpdateBusinessDto {
   @MaxLength(10)
   currency?: string;
 
+  // Zona waktu IANA (Asia/Jakarta, Asia/Makassar, Asia/Jayapura) — dipakai untuk
+  // tanggal nomor struk, jadwal promo, dan batas hari laporan. Singkatan "WIB" ditolak.
   @IsOptional()
-  @IsString()
+  @IsTimeZone()
   @MaxLength(50)
   timezone?: string;
 }

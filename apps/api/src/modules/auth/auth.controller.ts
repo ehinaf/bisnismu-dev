@@ -1,4 +1,5 @@
 import { Body, Controller, Get, HttpCode, HttpStatus, Post, Req, Res, UnauthorizedException, UseGuards } from "@nestjs/common";
+import { Throttle } from "@nestjs/throttler";
 import type { Request, Response } from "express";
 import { AuthService } from "./auth.service";
 import { RegisterBusinessDto } from "./dto/register-business.dto";
@@ -13,6 +14,8 @@ import type { AuthTokens } from "./auth.service";
 
 const REFRESH_COOKIE = "refresh_token";
 const REFRESH_COOKIE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+// Batas ketat untuk endpoint yang menerima kredensial (tebak password/PIN).
+const CREDENTIAL_THROTTLE = { default: { limit: 10, ttl: 60_000 } };
 
 @Controller("auth")
 export class AuthController {
@@ -28,6 +31,7 @@ export class AuthController {
   }
 
   @Post("register")
+  @Throttle(CREDENTIAL_THROTTLE)
   async register(@Body() dto: RegisterBusinessDto, @Res({ passthrough: true }) res: Response) {
     const { user, tokens } = await this.authService.registerBusiness(dto);
     this.setRefreshCookie(res, tokens);
@@ -36,6 +40,7 @@ export class AuthController {
 
   @Post("login")
   @HttpCode(HttpStatus.OK)
+  @Throttle(CREDENTIAL_THROTTLE)
   async login(@Body() dto: LoginDto, @Res({ passthrough: true }) res: Response) {
     const { user, tokens } = await this.authService.login(dto);
     this.setRefreshCookie(res, tokens);
@@ -44,6 +49,7 @@ export class AuthController {
 
   @Post("login-pin")
   @HttpCode(HttpStatus.OK)
+  @Throttle(CREDENTIAL_THROTTLE)
   async loginPin(@Body() dto: LoginPinDto, @Res({ passthrough: true }) res: Response) {
     const { user, tokens } = await this.authService.loginPin(dto);
     this.setRefreshCookie(res, tokens);

@@ -8,7 +8,7 @@ export class CreateTransactionItemDto {
   @IsUUID()
   variant_id?: string;
 
-  @IsNumber()
+  @IsNumber({ maxDecimalPlaces: 3 })
   @IsPositive()
   quantity!: number;
 
@@ -23,7 +23,7 @@ export class CreateTransactionItemDto {
   // input harga manual (jasa custom, barang bekas). Untuk pricing_type lain
   // field ini diabaikan sepenuhnya; harga selalu dihitung server-side.
   @IsOptional()
-  @IsNumber()
+  @IsNumber({ maxDecimalPlaces: 2 })
   @IsPositive()
   unit_price?: number;
 
