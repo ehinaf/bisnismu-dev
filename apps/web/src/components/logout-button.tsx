@@ -3,13 +3,13 @@
 import { LogOut } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { clearAuth } from "@/lib/auth";
+import { logout } from "@/lib/session";
 
 export function LogoutButton() {
   const router = useRouter();
 
-  function handleLogout() {
-    clearAuth();
+  async function handleLogout() {
+    await logout();
     router.replace("/login");
   }
 

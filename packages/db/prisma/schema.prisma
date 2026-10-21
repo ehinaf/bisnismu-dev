@@ -92,6 +92,10 @@ model BusinessSetting {
   enable_loyalty       Boolean       @default(false)
   enable_commission    Boolean       @default(false) // komisi karyawan (salon dsb)
   receipt_via_whatsapp Boolean       @default(true)
+  // Penguncian login PIN per bisnis: PIN tidak menunjuk user sebelum cocok, jadi
+  // percobaan gagal dihitung per bisnis, bukan per user.
+  pin_failed_attempts  Int           @default(0)
+  pin_locked_until     DateTime?     @db.Timestamptz(6)
   updated_at           DateTime      @updatedAt @db.Timestamptz(6)
 
   business    Business @relation(fields: [business_id], references: [id], onDelete: Cascade)
@@ -143,6 +147,7 @@ model User {
   transaction_items_served       TransactionItem[]   @relation("TransactionItemServedBy")
   commission_entries             CommissionEntry[]
   audit_logs                     AuditLog[]
+  refresh_tokens                 RefreshToken[]
 
   @@unique([business_id, email])
   @@index([business_id])
@@ -152,6 +157,26 @@ model User {
 // Izin granular per user (melengkapi role dasar).
 // Contoh permission_key: 'void_transaction', 'give_discount', 'view_reports',
 // 'manage_items', 'manage_stock', 'open_drawer_without_sale'
+// Refresh token opaque — hanya hash SHA-256 yang disimpan. Dirotasi setiap
+// /auth/refresh; satu family_id = satu sesi login. Token lama yang dipakai lagi
+// di luar masa tenggang → seluruh family dicabut (indikasi token dicuri).
+model RefreshToken {
+  id          String    @id @default(uuid()) @db.Uuid
+  user_id     String    @db.Uuid
+  family_id   String    @db.Uuid
+  token_hash  String    @unique @db.VarChar(64)
+  expires_at  DateTime  @db.Timestamptz(6)
+  replaced_at DateTime? @db.Timestamptz(6)
+  revoked_at  DateTime? @db.Timestamptz(6)
+  created_at  DateTime  @default(now()) @db.Timestamptz(6)
+
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([family_id])
+  @@index([user_id])
+  @@map("refresh_tokens")
+}
+
 model UserPermission {
   user_id        String @db.Uuid
   permission_key String @db.VarChar(60)

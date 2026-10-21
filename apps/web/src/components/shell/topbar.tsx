@@ -4,7 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { ChevronDown, LogOut, Menu } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { clearAuth, getUser } from "@/lib/auth";
+import { getUser } from "@/lib/auth";
+import { logout } from "@/lib/session";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { DrawerStatusPill } from "@/components/shell/drawer-status-pill";
 
@@ -139,8 +140,8 @@ function UserMenu() {
           </div>
           <button
             type="button"
-            onClick={() => {
-              clearAuth();
+            onClick={async () => {
+              await logout();
               router.replace("/login");
             }}
             className="flex w-full items-center gap-2 px-3 py-2 text-sm text-destructive hover:bg-accent"

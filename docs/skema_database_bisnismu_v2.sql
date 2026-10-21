@@ -59,6 +59,9 @@ CREATE TABLE business_settings (
     enable_loyalty      BOOLEAN DEFAULT FALSE,
     enable_commission   BOOLEAN DEFAULT FALSE, -- komisi karyawan (salon dsb)
     receipt_via_whatsapp BOOLEAN DEFAULT TRUE,
+    -- Penguncian login PIN per bisnis (PIN tidak menunjuk user sebelum cocok)
+    pin_failed_attempts INT NOT NULL DEFAULT 0,
+    pin_locked_until    TIMESTAMPTZ,
     updated_at          TIMESTAMPTZ DEFAULT now()
 );
 -- Catatan: kolom enable_* di atas membuat SATU codebase bisa melayani
@@ -83,6 +86,22 @@ CREATE TABLE users (
     UNIQUE (business_id, email)
 );
 CREATE INDEX idx_users_business ON users(business_id);
+
+-- Refresh token opaque (hanya hash SHA-256 disimpan), dirotasi tiap refresh.
+-- Satu family_id = satu sesi login; pemakaian ulang token lama di luar masa
+-- tenggang → seluruh family dicabut.
+CREATE TABLE refresh_tokens (
+    id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id         UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    family_id       UUID NOT NULL,
+    token_hash      VARCHAR(64) NOT NULL UNIQUE,
+    expires_at      TIMESTAMPTZ NOT NULL,
+    replaced_at     TIMESTAMPTZ,
+    revoked_at      TIMESTAMPTZ,
+    created_at      TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX idx_refresh_tokens_family ON refresh_tokens(family_id);
+CREATE INDEX idx_refresh_tokens_user ON refresh_tokens(user_id);
 
 -- Izin granular per user (melengkapi role dasar).
 -- Contoh permission_key: 'void_transaction', 'give_discount', 'view_reports',

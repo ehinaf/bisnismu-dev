@@ -20,7 +20,8 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { clearAuth, getUser } from "@/lib/auth";
+import { getUser } from "@/lib/auth";
+import { logout } from "@/lib/session";
 import { useActiveOutlet, useOutletStore } from "@/lib/stores/outlet-store";
 import { ShiftPanel } from "@/components/shell/shift-panel";
 
@@ -79,8 +80,8 @@ export function SidebarContent({
   const user = getUser();
   const canManage = !!user && MANAGEMENT_ROLES.includes(user.role);
 
-  function handleLogout() {
-    clearAuth();
+  async function handleLogout() {
+    await logout();
     router.replace("/login");
   }
 
