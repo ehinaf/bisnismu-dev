@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { PageHeader } from "@/components/ui/page-header";
 import { Badge } from "@/components/ui/badge";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Package, PackageOpen, Plus } from "lucide-react";
 import { apiClient, ApiError } from "@/lib/api-client";
 import { getUser } from "@/lib/auth";
@@ -75,6 +76,8 @@ export default function CatalogPage() {
 
   const [formOpen, setFormOpen] = useState(false);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
+  const [pendingDeactivate, setPendingDeactivate] = useState<ItemDetail | null>(null);
+  const [deactivating, setDeactivating] = useState(false);
 
   const [newCategoryName, setNewCategoryName] = useState("");
   const [newUnit, setNewUnit] = useState({ name: "", symbol: "" });
@@ -202,14 +205,19 @@ export default function CatalogPage() {
     }
   }
 
-  async function handleDeactivate(item: ItemDetail) {
-    if (!confirm(`Nonaktifkan "${item.name}"? Produk ini tidak akan muncul lagi di layar kasir.`)) return;
+  async function handleDeactivate() {
+    if (!pendingDeactivate) return;
+    setDeactivating(true);
     setError(null);
     try {
-      await apiClient.delete(`/catalog/items/${item.id}`);
+      await apiClient.delete(`/catalog/items/${pendingDeactivate.id}`);
+      setPendingDeactivate(null);
       await loadAll();
     } catch (err) {
+      setPendingDeactivate(null);
       setError(err instanceof ApiError ? err.message : "Gagal menonaktifkan produk.");
+    } finally {
+      setDeactivating(false);
     }
   }
 
@@ -443,7 +451,7 @@ export default function CatalogPage() {
                             Ubah
                           </Button>
                           {item.is_active && (
-                            <Button size="sm" variant="ghost" onClick={() => handleDeactivate(item)}>
+                            <Button size="sm" variant="ghost" onClick={() => setPendingDeactivate(item)}>
                               Nonaktifkan
                             </Button>
                           )}
@@ -457,6 +465,17 @@ export default function CatalogPage() {
           )}
         </CardContent>
       </Card>
+
+      <ConfirmDialog
+        open={!!pendingDeactivate}
+        title="Nonaktifkan produk?"
+        description={`"${pendingDeactivate?.name ?? ""}" tidak akan muncul lagi di layar kasir.`}
+        confirmLabel="Nonaktifkan"
+        destructive
+        busy={deactivating}
+        onConfirm={handleDeactivate}
+        onClose={() => setPendingDeactivate(null)}
+      />
     </div>
   );
 }

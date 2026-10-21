@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, ShoppingCart } from "lucide-react";
 import { ProductGrid } from "@/components/product-grid";
+import { Modal } from "@/components/ui/modal";
 import { PosToolbar } from "@/components/pos/pos-toolbar";
 import { CategoryChips, CategorySidebar } from "@/components/pos/category-sidebar";
 import { PosCart } from "@/components/pos/pos-cart";
@@ -240,7 +241,7 @@ export default function TransactionsPage() {
     // pb-20 menyisakan ruang untuk bar "Bayar" yang menempel di bawah layar ponsel.
     <div className="flex flex-1 flex-col pb-20 lg:pb-0">
       {!drawerSession && (
-        <div className="no-print flex items-center gap-2 bg-amber-50 px-4 py-2 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
+        <div className="no-print flex items-center gap-2 bg-warning/10 px-4 py-2 text-xs text-warning">
           <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
           Laci belum dibuka — transaksi tetap bisa disimpan, tapi buka shift dari sidebar untuk pelacakan kas yang akurat.
         </div>
@@ -317,36 +318,30 @@ export default function TransactionsPage() {
         </button>
       </div>
 
-      {mobileCartOpen && (
-        <div className="fixed inset-0 z-40 lg:hidden">
-          <div className="absolute inset-0 bg-black/50" onClick={() => setMobileCartOpen(false)} />
-          <div className="absolute inset-x-0 bottom-0 flex max-h-[92dvh] flex-col rounded-t-2xl border-t border-border bg-card shadow-2xl">
-            <button
-              type="button"
-              onClick={() => setMobileCartOpen(false)}
-              className="mx-auto mt-2 h-1 w-10 shrink-0 rounded-full bg-border"
-              aria-label="Tutup"
-            />
-            <div className="min-h-0 flex-1 overflow-y-auto">
-              <PosCart />
-              <PaymentPanel
-                subtotal={subtotal}
-                taxes={taxes}
-                rounding={settings?.rounding ?? "none"}
-                quote={quote}
-                quoteLoading={quoteLoading}
-                quoteError={quoteError}
-                channels={channels}
-                kasbonEnabled={!!settings?.enable_kasbon}
-                onOpenVoucher={() => setVoucherModalOpen(true)}
-                onSubmit={handleSubmit}
-                submitting={submitting}
-                error={submitError}
-              />
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Keranjang + bayar — ponsel/tablet kecil (bottom sheet dari Modal: focus trap, Escape, kunci scroll) */}
+      <Modal
+        open={mobileCartOpen}
+        onClose={() => setMobileCartOpen(false)}
+        title="Keranjang & Pembayaran"
+        className="max-h-[92dvh]"
+        bodyClassName="p-0"
+      >
+        <PosCart />
+        <PaymentPanel
+          subtotal={subtotal}
+          taxes={taxes}
+          rounding={settings?.rounding ?? "none"}
+          quote={quote}
+          quoteLoading={quoteLoading}
+          quoteError={quoteError}
+          channels={channels}
+          kasbonEnabled={!!settings?.enable_kasbon}
+          onOpenVoucher={() => setVoucherModalOpen(true)}
+          onSubmit={handleSubmit}
+          submitting={submitting}
+          error={submitError}
+        />
+      </Modal>
 
       <CustomerPickerModal open={customerModalOpen} onClose={() => setCustomerModalOpen(false)} />
       <TablePickerModal open={tableModalOpen} onClose={() => setTableModalOpen(false)} />

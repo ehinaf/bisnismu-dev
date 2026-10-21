@@ -120,7 +120,7 @@ function UserMenu() {
         onClick={() => setOpen((v) => !v)}
         className="flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-accent"
       >
-        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-600 text-xs font-semibold text-white">
+        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">
           {initials}
         </span>
         <span className="hidden text-left leading-tight md:block">

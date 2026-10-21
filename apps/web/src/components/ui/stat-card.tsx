@@ -21,7 +21,7 @@ export function StatCard({
       <p
         className={cn(
           "mt-1.5 text-xl font-semibold tracking-tight tabular-nums",
-          accent === "positive" && "text-green-600 dark:text-green-400",
+          accent === "positive" && "text-success",
           accent === "negative" && "text-destructive",
         )}
       >

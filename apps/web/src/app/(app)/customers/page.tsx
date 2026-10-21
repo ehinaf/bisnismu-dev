@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PageHeader } from "@/components/ui/page-header";
@@ -44,6 +45,8 @@ export default function CustomersPage() {
 
   const [formOpen, setFormOpen] = useState(false);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
+  const [pendingDelete, setPendingDelete] = useState<Customer | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     const user = getUser();
@@ -116,14 +119,19 @@ export default function CustomersPage() {
     }
   }
 
-  async function handleDeactivate(customer: Customer) {
-    if (!confirm(`Hapus pelanggan "${customer.name ?? customer.phone}"?`)) return;
+  async function handleDeactivate() {
+    if (!pendingDelete) return;
+    setDeleting(true);
     setError(null);
     try {
-      await apiClient.delete(`/customers/${customer.id}`);
+      await apiClient.delete(`/customers/${pendingDelete.id}`);
+      setPendingDelete(null);
       await loadAll();
     } catch (err) {
+      setPendingDelete(null);
       setError(err instanceof ApiError ? err.message : "Gagal menghapus pelanggan.");
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -240,7 +248,7 @@ export default function CustomersPage() {
                           <Button size="sm" variant="outline" onClick={() => openEditForm(c)}>
                             Ubah
                           </Button>
-                          <Button size="sm" variant="ghost" onClick={() => handleDeactivate(c)}>
+                          <Button size="sm" variant="ghost" onClick={() => setPendingDelete(c)}>
                             Hapus
                           </Button>
                         </div>
@@ -253,6 +261,17 @@ export default function CustomersPage() {
           )}
         </CardContent>
       </Card>
+
+      <ConfirmDialog
+        open={!!pendingDelete}
+        title="Hapus pelanggan?"
+        description={`"${pendingDelete?.name ?? pendingDelete?.phone ?? ""}" akan dihapus dari daftar pelanggan.`}
+        confirmLabel="Hapus"
+        destructive
+        busy={deleting}
+        onConfirm={handleDeactivate}
+        onClose={() => setPendingDelete(null)}
+      />
     </div>
   );
 }

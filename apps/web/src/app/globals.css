@@ -10,17 +10,22 @@
     --card-foreground: 240 10% 4%;
     --border: 240 6% 90%;
     --input: 240 6% 90%;
-    --primary: 240 6% 10%;
-    --primary-foreground: 0 0% 98%;
+    /* Biru brand (blue-700): teks putih 6,7:1, teks biru di atas bg-primary/10 tetap ≥ 4,5:1. */
+    --primary: 224 76% 48%;
+    --primary-foreground: 0 0% 100%;
     --secondary: 240 5% 96%;
     --secondary-foreground: 240 6% 10%;
     --muted: 240 5% 96%;
     --muted-foreground: 240 4% 46%;
     --accent: 240 5% 96%;
     --accent-foreground: 240 6% 10%;
-    --destructive: 0 72% 51%;
+    --destructive: 0 74% 42%;
     --destructive-foreground: 0 0% 98%;
-    --ring: 240 6% 10%;
+    /* Warna status untuk teks/ikon; latar memakai versi tipisnya (bg-success/10 dst.). */
+    --success: 143 64% 24%;
+    --warning: 23 83% 31%;
+    --info: 224 76% 48%;
+    --ring: 224 76% 48%;
     --radius: 0.5rem;
   }
 
@@ -31,17 +36,21 @@
     --card-foreground: 0 0% 98%;
     --border: 240 6% 18%;
     --input: 240 6% 18%;
-    --primary: 0 0% 98%;
-    --primary-foreground: 240 6% 10%;
+    --primary: 217 91% 60%;
+    --primary-foreground: 222 47% 11%;
     --secondary: 240 5% 14%;
     --secondary-foreground: 0 0% 98%;
     --muted: 240 5% 14%;
     --muted-foreground: 240 5% 65%;
     --accent: 240 5% 14%;
     --accent-foreground: 0 0% 98%;
-    --destructive: 0 63% 41%;
-    --destructive-foreground: 0 0% 98%;
-    --ring: 240 5% 84%;
+    /* Merah terang supaya teks error terbaca di latar gelap; tombolnya berteks gelap. */
+    --destructive: 0 91% 71%;
+    --destructive-foreground: 0 0% 4%;
+    --success: 142 69% 58%;
+    --warning: 43 96% 56%;
+    --info: 213 94% 68%;
+    --ring: 217 91% 60%;
   }
 
   * {

@@ -19,9 +19,9 @@ import type { DiningTable, OpenBillTransaction, Outlet } from "@/lib/types";
 const MANAGEMENT_ROLES = ["owner", "admin", "manager"];
 
 const STATUS_ACCENT: Record<string, string> = {
-  available: "before:bg-green-500",
-  occupied: "before:bg-orange-500",
-  reserved: "before:bg-blue-500",
+  available: "before:bg-success",
+  occupied: "before:bg-warning",
+  reserved: "before:bg-info",
   inactive: "before:bg-muted-foreground/40",
 };
 

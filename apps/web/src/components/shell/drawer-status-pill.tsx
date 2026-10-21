@@ -13,11 +13,11 @@ export function DrawerStatusPill() {
       className={cn(
         "inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-medium",
         isOpen
-          ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400"
+          ? "bg-success/10 text-success"
           : "bg-muted text-muted-foreground",
       )}
     >
-      <span className={cn("h-1.5 w-1.5 rounded-full", isOpen ? "bg-emerald-500" : "bg-zinc-400")} />
+      <span className={cn("h-1.5 w-1.5 rounded-full", isOpen ? "bg-success" : "bg-zinc-400")} />
       {isOpen ? "Laci • Terbuka" : "Laci • Tertutup"}
     </span>
   );

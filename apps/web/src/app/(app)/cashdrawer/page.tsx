@@ -98,9 +98,9 @@ function CurrentSessionCard({
                 <li key={m.id} className="flex items-center justify-between gap-2 text-sm">
                   <span className="flex min-w-0 items-center gap-1.5">
                     {m.flow_type === "cash_in" ? (
-                      <ArrowDownCircle className="h-4 w-4 shrink-0 text-emerald-500" />
+                      <ArrowDownCircle className="h-4 w-4 shrink-0 text-success" />
                     ) : (
-                      <ArrowUpCircle className="h-4 w-4 shrink-0 text-red-500" />
+                      <ArrowUpCircle className="h-4 w-4 shrink-0 text-destructive" />
                     )}
                     <span className="truncate">{m.reason}</span>
                   </span>

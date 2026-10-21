@@ -88,7 +88,7 @@ export function SidebarContent({
     <div className="flex h-full flex-col overflow-y-auto bg-zinc-950 text-zinc-400">
       {/* Logo + outlet */}
       <div className="flex items-center gap-2.5 px-4 py-4">
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-sm font-bold text-white">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary text-sm font-bold text-primary-foreground">
           B
         </span>
         <div className="min-w-0 leading-tight">
@@ -109,7 +109,7 @@ export function SidebarContent({
               onClick={onNavigate}
               className={cn(
                 "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
-                active ? "bg-blue-600 text-white" : "hover:bg-zinc-900 hover:text-zinc-200",
+                active ? "bg-primary text-primary-foreground" : "hover:bg-zinc-900 hover:text-zinc-200",
               )}
             >
               <Icon className="h-4 w-4 shrink-0" />
@@ -136,7 +136,7 @@ export function SidebarContent({
           onClick={onNavigate}
           className={cn(
             "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
-            pathname.startsWith("/help") ? "bg-blue-600 text-white" : "hover:bg-zinc-900 hover:text-zinc-200",
+            pathname.startsWith("/help") ? "bg-primary text-primary-foreground" : "hover:bg-zinc-900 hover:text-zinc-200",
           )}
         >
           <HelpCircle className="h-4 w-4" />

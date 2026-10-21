@@ -132,10 +132,10 @@ export function PaymentPanel({
 
   return (
     <div className="flex flex-col gap-4 p-4">
-      <div className="rounded-xl bg-emerald-50 px-4 py-3 dark:bg-emerald-950/40">
+      <div className="rounded-xl bg-success/10 px-4 py-3">
         <div className="flex items-center justify-between">
-          <span className="text-sm font-medium text-emerald-800 dark:text-emerald-300">Total Akhir</span>
-          <span className="text-xl font-bold tabular-nums text-emerald-800 dark:text-emerald-300">
+          <span className="text-sm font-medium text-success">Total Akhir</span>
+          <span className="text-xl font-bold tabular-nums text-success">
             {formatCurrency(totalFinal)}
           </span>
         </div>
@@ -194,7 +194,7 @@ export function PaymentPanel({
                 className={cn(
                   "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg",
                   p.is_receivable
-                    ? "bg-orange-100 text-orange-700 dark:bg-orange-950 dark:text-orange-400"
+                    ? "bg-warning/10 text-warning"
                     : (CHANNEL_COLORS[p.channel_type] ?? "bg-muted text-muted-foreground"),
                 )}
               >
@@ -274,7 +274,7 @@ export function PaymentPanel({
                   onClick={handleAddKasbon}
                   className="flex h-10 items-center gap-2 rounded-lg border border-border px-3 text-sm font-medium transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  <Wallet className="h-4 w-4 text-orange-500" />
+                  <Wallet className="h-4 w-4 text-warning" />
                   Kasbon
                 </button>
               )}
@@ -321,7 +321,7 @@ export function PaymentPanel({
                         customer ? "hover:bg-accent" : "cursor-not-allowed opacity-50",
                       )}
                     >
-                      <Wallet className="h-4 w-4 text-orange-500" />
+                      <Wallet className="h-4 w-4 text-warning" />
                       Kasbon / Piutang
                     </button>
                   )}
@@ -342,7 +342,7 @@ export function PaymentPanel({
           <span
             className={cn(
               "font-semibold tabular-nums",
-              kembalian > 0 && "text-xl font-bold text-emerald-700 dark:text-emerald-400",
+              kembalian > 0 && "text-xl font-bold text-success",
             )}
           >
             {formatCurrency(kembalian)}
@@ -351,7 +351,7 @@ export function PaymentPanel({
       </div>
 
       {blockingError && (
-        <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
+        <p className="rounded-lg bg-warning/10 px-3 py-2 text-sm text-warning">
           {blockingError}
         </p>
       )}

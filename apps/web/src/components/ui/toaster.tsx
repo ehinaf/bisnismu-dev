@@ -11,9 +11,9 @@ const VARIANT_ICON: Record<ToastVariant, LucideIcon> = {
 };
 
 const VARIANT_ICON_CLASS: Record<ToastVariant, string> = {
-  success: "text-emerald-600 dark:text-emerald-400",
+  success: "text-success",
   error: "text-destructive",
-  info: "text-blue-600 dark:text-blue-400",
+  info: "text-info",
 };
 
 // Live region (polite) selalu ada di DOM supaya pembaca layar mengumumkan
