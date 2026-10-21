@@ -48,7 +48,9 @@ function ReceiptPageContent({ params }: { params: Promise<{ id: string }> }) {
 
   function handleShareWhatsApp() {
     if (!transaction) return;
-    const text = `Struk ${transaction.transaction_number}\nTotal: ${formatCurrency(transaction.total)}\n${window.location.href}`;
+    // Tautan publik bertoken — pembeli tidak perlu login untuk membuka struknya.
+    const publicUrl = `${window.location.origin}/r/${transaction.receipt_token}`;
+    const text = `Struk ${transaction.transaction_number}\nTotal: ${formatCurrency(transaction.total)}\n${publicUrl}`;
     window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank");
   }
 
@@ -108,7 +110,14 @@ function ReceiptPageContent({ params }: { params: Promise<{ id: string }> }) {
               <div key={item.id} className="flex justify-between text-sm">
                 <span>
                   {/* Struk refund: qty tercatat negatif — tanda minus cukup di nominal. */}
-                  {item.item_name_snapshot} x{isRefund ? item.quantity.replace(/^-/, "") : item.quantity}
+                  {item.item_name_snapshot}
+                  {item.variant_name_snapshot && ` (${item.variant_name_snapshot})`} x
+                  {isRefund ? item.quantity.replace(/^-/, "") : item.quantity}
+                  {item.modifiers.length > 0 && (
+                    <span className="block text-xs text-muted-foreground">
+                      {item.modifiers.map((m) => m.modifier_name_snapshot).join(", ")}
+                    </span>
+                  )}
                 </span>
                 <span>{formatCurrency(item.subtotal)}</span>
               </div>

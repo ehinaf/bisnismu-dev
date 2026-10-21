@@ -1,13 +1,9 @@
 import { create } from "zustand";
 import { lineSubtotal } from "@/lib/pos-pricing";
 import { newClientRef } from "@/lib/utils";
+import { addCartLine, setCartLineQuantity, type CartItem, type NewCartLine } from "@/lib/cart-lines";
 
-export interface CartItem {
-  item_id: string;
-  name: string;
-  unit_price: number;
-  quantity: number;
-}
+export type { CartItem } from "@/lib/cart-lines";
 
 export interface PosCustomer {
   id: string;
@@ -38,9 +34,9 @@ interface CartState {
   // Idempotency key (client_ref) percobaan simpan saat ini, per jenis aksi.
   clientRefs: Partial<Record<ClientRefKind, string>>;
 
-  addItem: (item: { id: string; name: string; base_price: string | number }) => void;
-  removeItem: (item_id: string) => void;
-  updateQuantity: (item_id: string, quantity: number) => void;
+  addLine: (line: NewCartLine) => void;
+  removeItem: (line_key: string) => void;
+  updateQuantity: (line_key: string, quantity: number) => void;
   clear: () => void;
 
   setCustomer: (customer: PosCustomer | null) => void;
@@ -79,29 +75,11 @@ export const useCartStore = create<CartState>((set, get) => ({
   payments: [],
   clientRefs: {},
 
-  addItem: (item) =>
-    set((state) => {
-      const unitPrice = typeof item.base_price === "string" ? Number(item.base_price) : item.base_price;
-      const existing = state.items.find((i) => i.item_id === item.id);
-      if (existing) {
-        return {
-          items: state.items.map((i) => (i.item_id === item.id ? { ...i, quantity: i.quantity + 1 } : i)),
-        };
-      }
-      return {
-        items: [...state.items, { item_id: item.id, name: item.name, unit_price: unitPrice, quantity: 1 }],
-      };
-    }),
+  addLine: (line) => set((state) => ({ items: addCartLine(state.items, line) })),
 
-  removeItem: (item_id) => set((state) => ({ items: state.items.filter((i) => i.item_id !== item_id) })),
+  removeItem: (line_key) => set((state) => ({ items: setCartLineQuantity(state.items, line_key, 0) })),
 
-  updateQuantity: (item_id, quantity) =>
-    set((state) => ({
-      items:
-        quantity <= 0
-          ? state.items.filter((i) => i.item_id !== item_id)
-          : state.items.map((i) => (i.item_id === item_id ? { ...i, quantity } : i)),
-    })),
+  updateQuantity: (line_key, quantity) => set((state) => ({ items: setCartLineQuantity(state.items, line_key, quantity) })),
 
   clear: () => set({ items: [] }),
 

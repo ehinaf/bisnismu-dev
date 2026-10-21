@@ -9,11 +9,67 @@ import { UpdateItemDto } from "./dto/update-item.dto";
 export class ItemService {
   constructor(private readonly prisma: PrismaService) {}
 
-  list(business_id: string) {
-    return this.prisma.item.findMany({
+  // variant_count / modifier_group_count memberi tahu layar kasir item mana
+  // yang perlu dibuka pemilih opsinya sebelum masuk keranjang.
+  async list(business_id: string) {
+    const items = await this.prisma.item.findMany({
       where: { business_id, is_active: true, deleted_at: null },
       orderBy: { name: "asc" },
+      include: {
+        _count: {
+          select: {
+            variants: { where: { is_active: true, deleted_at: null } },
+            item_modifier_groups: { where: { modifier_group: { deleted_at: null } } },
+          },
+        },
+      },
     });
+    return items.map(({ _count, ...item }) => ({
+      ...item,
+      variant_count: _count.variants,
+      modifier_group_count: _count.item_modifier_groups,
+    }));
+  }
+
+  /** Pilihan untuk pemilih item di kasir: varian aktif + grup modifier terpasang beserta modifier aktifnya. */
+  async posOptions(business_id: string, id: string) {
+    const item = await this.prisma.item.findFirst({
+      where: { id, business_id, is_active: true, deleted_at: null },
+      select: {
+        id: true,
+        name: true,
+        base_price: true,
+        pricing_type: true,
+        variants: {
+          where: { is_active: true, deleted_at: null },
+          select: { id: true, name: true, price_adjustment: true },
+          orderBy: { name: "asc" },
+        },
+        item_modifier_groups: {
+          where: { modifier_group: { deleted_at: null } },
+          select: {
+            modifier_group: {
+              select: {
+                id: true,
+                name: true,
+                selection_type: true,
+                is_required: true,
+                min_select: true,
+                max_select: true,
+                modifiers: {
+                  where: { is_active: true },
+                  select: { id: true, name: true, price_adjustment: true },
+                  orderBy: { name: "asc" },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+    if (!item) throw new NotFoundException("Item tidak ditemukan");
+    const { item_modifier_groups, ...rest } = item;
+    return { ...rest, modifier_groups: item_modifier_groups.map((g) => g.modifier_group) };
   }
 
   async getOne(business_id: string, id: string) {

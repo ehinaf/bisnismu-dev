@@ -19,6 +19,7 @@ export function CartItemRow({
     <div className="flex items-start gap-3 py-3">
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium">{item.name}</p>
+        {item.options_label && <p className="truncate text-xs text-primary">{item.options_label}</p>}
         <p className="mt-0.5 text-xs text-muted-foreground">{formatCurrency(item.unit_price)} / item</p>
 
         <div className="mt-2 inline-flex items-center rounded-lg border border-border bg-background">

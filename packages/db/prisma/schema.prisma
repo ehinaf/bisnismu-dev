@@ -1200,6 +1200,9 @@ model Transaction {
   // Idempotency key dari client (UUID per percobaan checkout) — request ulang
   // setelah koneksi putus mengembalikan transaksi yang sama, bukan membuat duplikat.
   client_ref                 String?           @db.Uuid
+  // Token acak untuk tautan struk publik (/r/:token) — bukan id transaksi, supaya
+  // struk lain tidak bisa ditebak. Default DB mengisi transaksi lama saat migrasi.
+  receipt_token              String            @unique @default(dbgenerated("replace((gen_random_uuid())::text, '-'::text, ''::text)")) @db.VarChar(32)
   order_type                 order_type        @default(retail)
   transaction_type           transaction_type  @default(sale)
   status                     transaction_status @default(completed)

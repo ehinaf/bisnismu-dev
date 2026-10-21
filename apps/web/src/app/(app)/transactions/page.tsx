@@ -13,6 +13,7 @@ import { PosActionBar } from "@/components/pos/pos-action-bar";
 import { CustomerPickerModal } from "@/components/pos/customer-picker-modal";
 import { TablePickerModal } from "@/components/pos/table-picker-modal";
 import { VoucherModal } from "@/components/pos/voucher-modal";
+import { ItemOptionsModal, needsOptions } from "@/components/pos/item-options-modal";
 import { apiClient, ApiError } from "@/lib/api-client";
 import { formatCurrency } from "@/lib/format";
 import { usePosHotkeys } from "@/lib/hooks/use-pos-hotkeys";
@@ -21,6 +22,7 @@ import { useCashdrawer } from "@/lib/hooks/use-cashdrawer";
 import { useOpenOrdersCount } from "@/lib/hooks/use-open-orders-count";
 import { useOutletStore } from "@/lib/stores/outlet-store";
 import { cartSubtotal, useCartStore } from "@/lib/stores/cart-store";
+import { toTransactionLine } from "@/lib/cart-lines";
 import { toast } from "@/lib/stores/toast-store";
 import type { BusinessSettings, CatalogItem, Category, PaymentChannel, Tax } from "@/lib/types";
 
@@ -38,7 +40,7 @@ export default function TransactionsPage() {
   const { refresh: refreshOpenOrders } = useOpenOrdersCount();
 
   const items = useCartStore((s) => s.items);
-  const addItem = useCartStore((s) => s.addItem);
+  const addLine = useCartStore((s) => s.addLine);
   const customer = useCartStore((s) => s.customer);
   const table = useCartStore((s) => s.table);
   const orderNotes = useCartStore((s) => s.orderNotes);
@@ -63,6 +65,7 @@ export default function TransactionsPage() {
   const [tableModalOpen, setTableModalOpen] = useState(false);
   const [voucherModalOpen, setVoucherModalOpen] = useState(false);
   const [mobileCartOpen, setMobileCartOpen] = useState(false);
+  const [optionsItem, setOptionsItem] = useState<CatalogItem | null>(null);
   const [taxPopoverOpen, setTaxPopoverOpen] = useState(false);
 
   const [submitting, setSubmitting] = useState(false);
@@ -114,7 +117,7 @@ export default function TransactionsPage() {
             outlet_id: activeOutletId,
             customer_id: customer?.id,
             voucher_code: voucherCode ?? undefined,
-            items: items.map((i) => ({ item_id: i.item_id, quantity: i.quantity })),
+            items: items.map(toTransactionLine),
           }
         : null,
     [activeOutletId, items, customer, voucherCode],
@@ -125,8 +128,10 @@ export default function TransactionsPage() {
     error: quoteError,
   } = useCheckoutQuote(quoteBody ? "/transactions/quote" : null, quoteBody);
 
+  // Item bervarian / bermodifier / harga bebas → pemilih opsi dulu; lainnya langsung masuk.
   function handleAdd(item: CatalogItem) {
-    addItem({ id: item.id, name: item.name, base_price: item.base_price });
+    if (needsOptions(item)) setOptionsItem(item);
+    else addLine({ item_id: item.id, name: item.name, unit_price: Number(item.base_price) });
   }
 
   // Enter di kolom cari: barcode/SKU persis → tambah; satu-satunya produk yang
@@ -162,7 +167,7 @@ export default function TransactionsPage() {
         customer_id: customer?.id,
         dining_table_id: table?.id,
         notes: orderNotes.trim() || undefined,
-        items: items.map((i) => ({ item_id: i.item_id, quantity: i.quantity })),
+        items: items.map(toTransactionLine),
       });
       const label = table ? `Order ${table.name}` : "Order";
       clearAll();
@@ -195,7 +200,7 @@ export default function TransactionsPage() {
           dining_table_id: table?.id,
           notes: orderNotes.trim() || undefined,
           voucher_code: voucherCode ?? undefined,
-          items: items.map((i) => ({ item_id: i.item_id, quantity: i.quantity })),
+          items: items.map(toTransactionLine),
           payments: payments.map((p) => ({
             payment_channel_id: p.payment_channel_id,
             amount: p.amount,
@@ -228,7 +233,7 @@ export default function TransactionsPage() {
   );
 
   usePosHotkeys({
-    enabled: !customerModalOpen && !tableModalOpen && !voucherModalOpen,
+    enabled: !customerModalOpen && !tableModalOpen && !voucherModalOpen && !optionsItem,
     onVoucher: () => setVoucherModalOpen(true),
     onTax: () => setTaxPopoverOpen((v) => !v),
     onHoldOrder: handleHoldOrder,
@@ -350,6 +355,14 @@ export default function TransactionsPage() {
       <CustomerPickerModal open={customerModalOpen} onClose={() => setCustomerModalOpen(false)} />
       <TablePickerModal open={tableModalOpen} onClose={() => setTableModalOpen(false)} />
       <VoucherModal open={voucherModalOpen} onClose={() => setVoucherModalOpen(false)} />
+      <ItemOptionsModal
+        item={optionsItem}
+        onClose={() => setOptionsItem(null)}
+        onAdd={(line) => {
+          addLine(line);
+          setOptionsItem(null);
+        }}
+      />
     </div>
   );
 }

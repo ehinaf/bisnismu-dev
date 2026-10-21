@@ -4,13 +4,15 @@
  * Tidak masuk CI (belum ada service Postgres di GitHub Actions).
  */
 import { randomUUID } from "node:crypto";
-import { BadRequestException, ConflictException } from "@nestjs/common";
+import { BadRequestException, ConflictException, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@bisnismu/db";
 import { PrismaService } from "../../prisma/prisma.service";
 import { zonedParts } from "../../common/utils/business-time";
 import { CashdrawerService } from "../cashdrawer/cashdrawer.service";
 import { CustomerService } from "../customer/customer.service";
 import { ReportService } from "../report/report.service";
+import { OutletService } from "../tenant/outlet.service";
+import { PublicReceiptService } from "../public/public-receipt.service";
 import { SalesService } from "./sales.service";
 import { CreateTransactionDto } from "./dto/create-transaction.dto";
 
@@ -1000,5 +1002,122 @@ describe("SalesService (integration)", () => {
     );
     expect(new Set(same.map((r) => r.id)).size).toBe(1);
     expect(await prisma.transaction.count({ where: { reference_transaction_id: sale2.id } })).toBe(1);
+  });
+  // ===================================================================
+  // Sprint 3: opsi item, struk publik, outlet baru, laporan
+  // ===================================================================
+
+  it("opsi item: varian + modifier wajib + harga bebas tersimpan sebagai snapshot", async () => {
+    const outlet = await prisma.outlet.create({ data: { business_id: businessId, name: "Outlet Opsi" } });
+    const menu = await prisma.item.create({ data: { business_id: businessId, name: "Mie Opsi", base_price: 15000, track_stock: false } });
+    const large = await prisma.itemVariant.create({ data: { item_id: menu.id, name: "Jumbo", price_adjustment: 5000 } });
+    const group = await prisma.modifierGroup.create({
+      data: { business_id: businessId, name: "Level Pedas Uji", is_required: true, min_select: 1, max_select: 1 },
+    });
+    const spicy = await prisma.modifier.create({ data: { modifier_group_id: group.id, name: "Pedas", price_adjustment: 1000 } });
+    await prisma.itemModifierGroup.create({ data: { item_id: menu.id, modifier_group_id: group.id } });
+    const custom = await prisma.item.create({
+      data: { business_id: businessId, name: "Jasa Bebas", base_price: 0, pricing_type: "open", track_stock: false },
+    });
+
+    await expect(
+      service.createTransaction(businessId, cashierId, {
+        outlet_id: outlet.id,
+        items: [{ item_id: menu.id, variant_id: large.id, quantity: 1 }],
+        payments: [{ payment_channel_id: qrisChannelId, amount: 20000 }],
+      }),
+    ).rejects.toThrow(/wajib memilih modifier/);
+
+    const sale = await service.createTransaction(businessId, cashierId, {
+      outlet_id: outlet.id,
+      items: [
+        { item_id: menu.id, variant_id: large.id, modifier_ids: [spicy.id], quantity: 2, notes: "tanpa sayur" },
+        { item_id: custom.id, unit_price: 12500, quantity: 1 },
+      ],
+      payments: [{ payment_channel_id: qrisChannelId, amount: 54500 }],
+    });
+    const mie = sale.items.find((i) => i.item_id === menu.id)!;
+    expect(mie.variant_name_snapshot).toBe("Jumbo");
+    expect(mie.unit_price.toNumber()).toBe(21000); // 15.000 + 5.000 + 1.000
+    expect(mie.modifiers.map((m) => m.modifier_name_snapshot)).toEqual(["Pedas"]);
+    expect(mie.notes).toBe("tanpa sayur");
+    expect(sale.total.toNumber()).toBe(54500);
+  });
+
+  it("struk publik: token unik per transaksi, struk terbaca lewat token tanpa data pelanggan/kasir", async () => {
+    const publicReceipts = new PublicReceiptService(prisma);
+    const item = await createItemWithStock("Item Struk Publik", 10);
+    const customer = await prisma.customer.create({ data: { business_id: businessId, name: "Rahasia Pelanggan" } });
+    const a = await service.createTransaction(businessId, cashierId, { ...buildDto(item.id, 1, 10000), customer_id: customer.id });
+    const b = await service.createTransaction(businessId, cashierId, buildDto(item.id, 1, 10000));
+
+    expect(a.receipt_token).toMatch(/^[0-9a-f]{32}$/);
+    expect(a.receipt_token).not.toBe(b.receipt_token);
+
+    const receipt = await publicReceipts.getReceipt(a.receipt_token);
+    expect(receipt.transaction_number).toBe(a.transaction_number);
+    expect(receipt.items[0].name).toBe("Item Struk Publik");
+    expect(JSON.stringify(receipt)).not.toContain("Rahasia Pelanggan");
+    expect(JSON.stringify(receipt)).not.toContain(a.id);
+    await expect(publicReceipts.getReceipt("f".repeat(32))).rejects.toThrow(NotFoundException);
+  });
+
+  it("outlet baru langsung punya baris stok (item & varian) dan bisa menjual", async () => {
+    const outlets = new OutletService(prisma);
+    const item = await createItemWithStock("Item Outlet Baru", 5);
+    const sized = await prisma.item.create({ data: { business_id: businessId, name: "Kaos Outlet Baru", base_price: 50000 } });
+    const sizeM = await prisma.itemVariant.create({ data: { item_id: sized.id, name: "M" } });
+
+    const outlet = await outlets.create(businessId, { name: "Cabang Baru Uji" });
+    const rows = await prisma.inventory.findMany({ where: { outlet_id: outlet.id, item_id: { in: [item.id, sized.id] } } });
+    expect(rows.map((r) => `${r.item_id === item.id ? "item" : "kaos"}:${r.variant_id === sizeM.id ? "M" : "-"}`).sort()).toEqual([
+      "item:-",
+      "kaos:-",
+      "kaos:M",
+    ]);
+
+    await prisma.inventory.updateMany({ where: { outlet_id: outlet.id, item_id: item.id }, data: { quantity_on_hand: 3 } });
+    const sale = await service.createTransaction(businessId, cashierId, {
+      outlet_id: outlet.id,
+      items: [{ item_id: item.id, quantity: 1 }],
+      payments: [{ payment_channel_id: qrisChannelId, amount: 10000 }],
+    });
+    expect(sale.status).toBe("completed");
+    expect(await stockOf(item.id, outlet.id)).toBe(2);
+  });
+
+  it("laporan: open bill dibayar hari ini masuk hari ini (completed_at); laba kotor tanpa pajak", async () => {
+    const reports = new ReportService(prisma);
+    const outlet = await prisma.outlet.create({ data: { business_id: businessId, name: "Outlet Laporan Sprint 3" } });
+    const item = await createItemWithStock("Item Laba", 10, 10000, outlet.id); // HPP 6.000
+    const tax = await prisma.tax.create({ data: { business_id: businessId, name: "PB1 Laba", rate: 11 } });
+    try {
+      const bill = await service.openBill(businessId, cashierId, {
+        outlet_id: outlet.id,
+        items: [{ item_id: item.id, quantity: 1 }],
+      });
+      // Bill dibuka "kemarin".
+      await prisma.transaction.update({
+        where: { id: bill.id },
+        data: { created_at: new Date(Date.now() - 24 * 60 * 60 * 1000) },
+      });
+      await service.closeBill(businessId, cashierId, bill.id, {
+        payments: [{ payment_channel_id: qrisChannelId, amount: 11100 }],
+      });
+
+      const today = zonedParts(new Date(), "Asia/Jakarta").date;
+      const daily = await reports.dailySales(businessId, { outlet_id: outlet.id });
+      expect(daily).toHaveLength(1);
+      expect(daily[0].sales_date.toISOString().slice(0, 10)).toBe(today);
+      expect(daily[0].gross_sales.toNumber()).toBe(11100);
+      expect(daily[0].total_taxes.toNumber()).toBe(1100);
+      // 11.100 − 1.100 pajak − 6.000 HPP
+      expect(daily[0].gross_profit.toNumber()).toBe(4000);
+
+      const top = await reports.topItems(businessId, { outlet_id: outlet.id, from: today, to: today });
+      expect(top).toHaveLength(1);
+    } finally {
+      await prisma.tax.update({ where: { id: tax.id }, data: { is_active: false } });
+    }
   });
 });

@@ -734,6 +734,7 @@ CREATE TABLE transactions (
     cash_drawer_session_id UUID REFERENCES cash_drawer_sessions(id),
     transaction_number  VARCHAR(60) NOT NULL,
     client_ref          UUID,                                 -- idempotency key checkout dari client
+    receipt_token       VARCHAR(32) NOT NULL UNIQUE DEFAULT replace(gen_random_uuid()::text, '-', ''),  -- tautan struk publik /r/:token
     order_type          order_type DEFAULT 'retail',
     transaction_type    transaction_type DEFAULT 'sale',
     status              transaction_status DEFAULT 'completed',

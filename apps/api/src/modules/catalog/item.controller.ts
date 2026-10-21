@@ -30,6 +30,11 @@ export class ItemController {
     return this.itemService.list(user.business_id);
   }
 
+  @Get(":id/pos-options")
+  posOptions(@CurrentUser() user: JwtPayload, @Param("id") id: string) {
+    return this.itemService.posOptions(user.business_id, id);
+  }
+
   @Get(":id")
   getOne(@CurrentUser() user: JwtPayload, @Param("id") id: string) {
     return this.itemService.getOne(user.business_id, id);

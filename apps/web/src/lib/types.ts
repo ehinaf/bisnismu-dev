@@ -9,6 +9,28 @@ export interface CatalogItem {
   category_id: string | null;
   base_price: string;
   image_url: string | null;
+  pricing_type: PricingType;
+  // >0 → kasir harus memilih opsi lewat pemilih item sebelum masuk keranjang.
+  variant_count: number;
+  modifier_group_count: number;
+}
+
+// GET /catalog/items/:id/pos-options — pilihan untuk pemilih item di kasir.
+export interface PosItemOptions {
+  id: string;
+  name: string;
+  base_price: string;
+  pricing_type: PricingType;
+  variants: Array<{ id: string; name: string; price_adjustment: string }>;
+  modifier_groups: Array<{
+    id: string;
+    name: string;
+    selection_type: "single" | "multiple";
+    is_required: boolean;
+    min_select: number;
+    max_select: number;
+    modifiers: Array<{ id: string; name: string; price_adjustment: string }>;
+  }>;
 }
 
 export type TaxKind = "tax" | "service_charge";
@@ -120,6 +142,7 @@ export interface TransactionItemDetail {
   id: string;
   item_name_snapshot: string;
   variant_name_snapshot: string | null;
+  modifiers: Array<{ modifier_name_snapshot: string }>;
   quantity: string;
   unit_price: string;
   subtotal: string;
@@ -138,6 +161,7 @@ export type TransactionType = "sale" | "refund";
 export interface TransactionDetail {
   id: string;
   transaction_number: string;
+  receipt_token: string;
   transaction_type: TransactionType;
   status: TransactionStatus;
   void_reason: string | null;
@@ -288,4 +312,34 @@ export interface BusinessUser {
   role: "owner" | "admin" | "manager" | "cashier" | "staff";
   is_active: boolean;
   permissions: string[];
+}
+
+// GET /public/receipts/:token — struk publik (tanpa data pelanggan/kasir).
+export interface PublicReceipt {
+  business_name: string;
+  receipt_header: string | null;
+  receipt_footer: string | null;
+  outlet: { name: string; address: string | null; phone: string | null };
+  transaction_number: string;
+  transaction_type: TransactionType;
+  status: TransactionStatus;
+  date: string;
+  reference_number: string | null;
+  items: Array<{
+    name: string;
+    variant: string | null;
+    modifiers: string[];
+    quantity: string;
+    unit_price: string;
+    subtotal: string;
+  }>;
+  subtotal: string;
+  discount_total: string;
+  tax_total: string;
+  service_charge_total: string;
+  delivery_fee: string;
+  rounding_adjustment: string;
+  total: string;
+  change_due: string;
+  payments: Array<{ method: string; amount: string }>;
 }

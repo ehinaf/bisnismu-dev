@@ -1403,8 +1403,9 @@ export class SalesService {
     itemName: string,
     modifierIds: string[],
   ): Promise<ResolvedModifier[]> {
+    // Grup yang sudah dihapus (soft delete) tidak berlaku lagi walau masih terpasang.
     const attachedGroups = await tx.itemModifierGroup.findMany({
-      where: { item_id: itemId },
+      where: { item_id: itemId, modifier_group: { deleted_at: null } },
       include: { modifier_group: true },
     });
 

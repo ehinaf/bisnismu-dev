@@ -28,7 +28,7 @@ export class SalesController {
     const receiptBaseUrl = process.env.PUBLIC_RECEIPT_BASE_URL ?? "http://localhost:3000/r";
     return {
       transaction,
-      receipt_url: `${receiptBaseUrl}/${transaction.id}`,
+      receipt_url: `${receiptBaseUrl}/${transaction.receipt_token}`,
     };
   }
 
@@ -125,7 +125,7 @@ export class SalesController {
     const receiptBaseUrl = process.env.PUBLIC_RECEIPT_BASE_URL ?? "http://localhost:3000/r";
     return {
       transaction,
-      receipt_url: `${receiptBaseUrl}/${transaction.id}`,
+      receipt_url: `${receiptBaseUrl}/${transaction.receipt_token}`,
     };
   }
 }

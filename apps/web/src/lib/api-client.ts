@@ -98,6 +98,8 @@ async function download(path: string): Promise<Blob> {
 
 export const apiClient = {
   get: <T>(path: string) => request<T>(path, { method: "GET" }),
+  // Endpoint tanpa login (mis. struk publik) — tanpa token & tanpa coba refresh.
+  getPublic: <T>(path: string) => request<T>(path, { method: "GET", auth: false }),
   post: <T>(path: string, body?: unknown, opts?: Partial<RequestOptions>) =>
     request<T>(path, { method: "POST", body, ...opts }),
   patch: <T>(path: string, body?: unknown) => request<T>(path, { method: "PATCH", body }),

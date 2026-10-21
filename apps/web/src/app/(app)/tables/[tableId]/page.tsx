@@ -20,7 +20,9 @@ import { PERMISSIONS, usePermissions } from "@/lib/hooks/use-permissions";
 import { toast } from "@/lib/stores/toast-store";
 import { checkPayments } from "@/lib/payment-rules";
 import { newClientRef } from "@/lib/utils";
-import type { CartItem } from "@/lib/stores/cart-store";
+import { cartSubtotal } from "@/lib/stores/cart-store";
+import { addCartLine, setCartLineQuantity, toTransactionLine, type CartItem } from "@/lib/cart-lines";
+import { ItemOptionsModal, needsOptions } from "@/components/pos/item-options-modal";
 import { useActiveOutlet, useOutletStore } from "@/lib/stores/outlet-store";
 import type { CatalogItem, DiningTable, OpenBillTransaction, PaymentChannel } from "@/lib/types";
 
@@ -29,22 +31,6 @@ interface BillResponse {
   receipt_url: string;
 }
 
-function addToPending(list: CartItem[], item: CatalogItem): CartItem[] {
-  const existing = list.find((i) => i.item_id === item.id);
-  if (existing) {
-    return list.map((i) => (i.item_id === item.id ? { ...i, quantity: i.quantity + 1 } : i));
-  }
-  return [...list, { item_id: item.id, name: item.name, unit_price: Number(item.base_price), quantity: 1 }];
-}
-
-function updateQty(list: CartItem[], item_id: string, quantity: number): CartItem[] {
-  if (quantity <= 0) return list.filter((i) => i.item_id !== item_id);
-  return list.map((i) => (i.item_id === item_id ? { ...i, quantity } : i));
-}
-
-function pendingTotal(list: CartItem[]): number {
-  return list.reduce((sum, i) => sum + i.unit_price * i.quantity, 0);
-}
 
 export default function TableBillPage({ params }: { params: Promise<{ tableId: string }> }) {
   const { tableId } = use(params);
@@ -63,6 +49,13 @@ export default function TableBillPage({ params }: { params: Promise<{ tableId: s
 
   const [guestCount, setGuestCount] = useState("2");
   const [pending, setPending] = useState<CartItem[]>([]);
+  const [optionsItem, setOptionsItem] = useState<CatalogItem | null>(null);
+
+  // Sama dengan layar kasir: item bervarian/bermodifier/harga bebas → pemilih opsi dulu.
+  function handleAddPending(item: CatalogItem) {
+    if (needsOptions(item)) setOptionsItem(item);
+    else setPending((p) => addCartLine(p, { item_id: item.id, name: item.name, unit_price: Number(item.base_price) }));
+  }
   const [addingItems, setAddingItems] = useState(false);
 
   const [payingOpen, setPayingOpen] = useState(false);
@@ -120,7 +113,7 @@ export default function TableBillPage({ params }: { params: Promise<{ tableId: s
         outlet_id: outlet.id,
         dining_table_id: tableId,
         guest_count: guestCount ? Number(guestCount) : undefined,
-        items: pending.map((i) => ({ item_id: i.item_id, quantity: i.quantity })),
+        items: pending.map(toTransactionLine),
       });
       setPending([]);
       await loadAll();
@@ -137,7 +130,7 @@ export default function TableBillPage({ params }: { params: Promise<{ tableId: s
     setError(null);
     try {
       await apiClient.post(`/transactions/${bill.id}/items`, {
-        items: pending.map((i) => ({ item_id: i.item_id, quantity: i.quantity })),
+        items: pending.map(toTransactionLine),
       });
       setPending([]);
       setAddingItems(false);
@@ -196,7 +189,7 @@ export default function TableBillPage({ params }: { params: Promise<{ tableId: s
       {!bill ? (
         <div className="flex flex-1 flex-col gap-4 lg:flex-row">
           <div className="flex-1">
-            <ProductGrid items={catalogItems} onAdd={(item) => setPending((p) => addToPending(p, item))} />
+            <ProductGrid items={catalogItems} onAdd={handleAddPending} />
           </div>
           <aside className="flex w-full flex-col gap-3 border-t border-border bg-card p-4 lg:w-80 lg:border-l lg:border-t-0">
             <div className="flex flex-col gap-1.5">
@@ -210,18 +203,18 @@ export default function TableBillPage({ params }: { params: Promise<{ tableId: s
               <div className="flex-1 divide-y divide-border overflow-y-auto">
                 {pending.map((item) => (
                   <CartItemRow
-                    key={item.item_id}
+                    key={item.line_key}
                     item={item}
-                    onIncrease={() => setPending((p) => updateQty(p, item.item_id, item.quantity + 1))}
-                    onDecrease={() => setPending((p) => updateQty(p, item.item_id, item.quantity - 1))}
-                    onRemove={() => setPending((p) => updateQty(p, item.item_id, 0))}
+                    onIncrease={() => setPending((p) => setCartLineQuantity(p, item.line_key, item.quantity + 1))}
+                    onDecrease={() => setPending((p) => setCartLineQuantity(p, item.line_key, item.quantity - 1))}
+                    onRemove={() => setPending((p) => setCartLineQuantity(p, item.line_key, 0))}
                   />
                 ))}
               </div>
             )}
             <div className="flex items-center justify-between border-t border-border pt-3 text-sm font-semibold">
               <span>Subtotal</span>
-              <span>{formatCurrency(pendingTotal(pending))}</span>
+              <span>{formatCurrency(cartSubtotal(pending))}</span>
             </div>
             <Button size="lg" disabled={pending.length === 0 || submitting} onClick={handleOpenBill}>
               {submitting ? "Membuka..." : "Buka Meja"}
@@ -260,16 +253,16 @@ export default function TableBillPage({ params }: { params: Promise<{ tableId: s
                 <CardTitle>Tambah Item ke Bill</CardTitle>
               </CardHeader>
               <CardContent className="flex flex-col gap-3">
-                <ProductGrid items={catalogItems} onAdd={(item) => setPending((p) => addToPending(p, item))} />
+                <ProductGrid items={catalogItems} onAdd={handleAddPending} />
                 {pending.length > 0 && (
                   <div className="flex flex-col divide-y divide-border border-t border-border">
                     {pending.map((item) => (
                       <CartItemRow
-                        key={item.item_id}
+                        key={item.line_key}
                         item={item}
-                        onIncrease={() => setPending((p) => updateQty(p, item.item_id, item.quantity + 1))}
-                        onDecrease={() => setPending((p) => updateQty(p, item.item_id, item.quantity - 1))}
-                        onRemove={() => setPending((p) => updateQty(p, item.item_id, 0))}
+                        onIncrease={() => setPending((p) => setCartLineQuantity(p, item.line_key, item.quantity + 1))}
+                        onDecrease={() => setPending((p) => setCartLineQuantity(p, item.line_key, item.quantity - 1))}
+                        onRemove={() => setPending((p) => setCartLineQuantity(p, item.line_key, 0))}
                       />
                     ))}
                   </div>
@@ -380,6 +373,14 @@ export default function TableBillPage({ params }: { params: Promise<{ tableId: s
           )}
         </div>
       )}
+      <ItemOptionsModal
+        item={optionsItem}
+        onClose={() => setOptionsItem(null)}
+        onAdd={(line) => {
+          setPending((p) => addCartLine(p, line));
+          setOptionsItem(null);
+        }}
+      />
     </div>
   );
 }

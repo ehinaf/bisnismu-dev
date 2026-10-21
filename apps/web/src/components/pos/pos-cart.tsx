@@ -74,11 +74,11 @@ export function PosCart() {
         <div className="min-h-0 flex-1 divide-y divide-border overflow-y-auto px-4">
           {items.map((item) => (
             <CartItemRow
-              key={item.item_id}
+              key={item.line_key}
               item={item}
-              onIncrease={() => updateQuantity(item.item_id, item.quantity + 1)}
-              onDecrease={() => updateQuantity(item.item_id, item.quantity - 1)}
-              onRemove={() => removeItem(item.item_id)}
+              onIncrease={() => updateQuantity(item.line_key, item.quantity + 1)}
+              onDecrease={() => updateQuantity(item.line_key, item.quantity - 1)}
+              onRemove={() => removeItem(item.line_key)}
             />
           ))}
         </div>
