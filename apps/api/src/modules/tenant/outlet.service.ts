@@ -24,9 +24,25 @@ export class OutletService {
     return outlet;
   }
 
+  /**
+   * Outlet baru langsung bisa menjual: setiap item yang melacak stok — dan
+   * tiap variannya — mendapat baris inventory stok 0 (sama seperti item/varian
+   * baru mendapat baris di semua outlet). Tanpa ini penjualan pertama gagal
+   * "stok belum terdaftar".
+   */
   create(business_id: string, dto: CreateOutletDto) {
-    return this.prisma.outlet.create({
-      data: { ...dto, business_id },
+    return this.prisma.$transaction(async (tx) => {
+      const outlet = await tx.outlet.create({ data: { ...dto, business_id } });
+      const items = await tx.item.findMany({
+        where: { business_id, track_stock: true, deleted_at: null },
+        select: { id: true, variants: { where: { deleted_at: null }, select: { id: true } } },
+      });
+      const rows = items.flatMap((item) => [
+        { outlet_id: outlet.id, item_id: item.id, variant_id: null, quantity_on_hand: 0 },
+        ...item.variants.map((v) => ({ outlet_id: outlet.id, item_id: item.id, variant_id: v.id, quantity_on_hand: 0 })),
+      ]);
+      if (rows.length > 0) await tx.inventory.createMany({ data: rows });
+      return outlet;
     });
   }
 

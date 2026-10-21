@@ -7,6 +7,7 @@ describe("OutletService", () => {
   let service: OutletService;
   let prisma: {
     outlet: { findMany: jest.Mock; findFirst: jest.Mock; create: jest.Mock; update: jest.Mock };
+    $transaction: jest.Mock;
   };
 
   beforeEach(async () => {
@@ -17,6 +18,7 @@ describe("OutletService", () => {
         create: jest.fn(),
         update: jest.fn(),
       },
+      $transaction: jest.fn(),
     };
 
     const moduleRef = await Test.createTestingModule({
@@ -43,11 +45,42 @@ describe("OutletService", () => {
     });
   });
 
+  function mockCreateTx(items: Array<{ id: string; variants: Array<{ id: string }> }>) {
+    const tx = {
+      outlet: { create: jest.fn().mockResolvedValue({ id: "o1", business_id: "biz-1", name: "Cabang Utama" }) },
+      item: { findMany: jest.fn().mockResolvedValue(items) },
+      inventory: { createMany: jest.fn().mockResolvedValue({}) },
+    };
+    prisma.$transaction.mockImplementation((fn: (t: typeof tx) => unknown) => fn(tx));
+    return tx;
+  }
+
   it("create() menyisipkan business_id dari konteks, bukan dari body", async () => {
-    prisma.outlet.create.mockResolvedValue({ id: "o1", business_id: "biz-1", name: "Cabang Utama" });
+    const tx = mockCreateTx([]);
     await service.create("biz-1", { name: "Cabang Utama" });
-    expect(prisma.outlet.create).toHaveBeenCalledWith({
+    expect(tx.outlet.create).toHaveBeenCalledWith({
       data: { name: "Cabang Utama", business_id: "biz-1" },
+    });
+    expect(tx.inventory.createMany).not.toHaveBeenCalled();
+  });
+
+  it("create() memberi baris stok 0 untuk item yang melacak stok beserta variannya", async () => {
+    const tx = mockCreateTx([
+      { id: "item-1", variants: [] },
+      { id: "item-2", variants: [{ id: "var-a" }, { id: "var-b" }] },
+    ]);
+    await service.create("biz-1", { name: "Cabang Baru" });
+
+    expect(tx.item.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { business_id: "biz-1", track_stock: true, deleted_at: null } }),
+    );
+    expect(tx.inventory.createMany).toHaveBeenCalledWith({
+      data: [
+        { outlet_id: "o1", item_id: "item-1", variant_id: null, quantity_on_hand: 0 },
+        { outlet_id: "o1", item_id: "item-2", variant_id: null, quantity_on_hand: 0 },
+        { outlet_id: "o1", item_id: "item-2", variant_id: "var-a", quantity_on_hand: 0 },
+        { outlet_id: "o1", item_id: "item-2", variant_id: "var-b", quantity_on_hand: 0 },
+      ],
     });
   });
 
