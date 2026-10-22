@@ -1,7 +1,7 @@
 /**
  * Integration test SalesService — butuh Postgres nyata (lihat .env DATABASE_URL).
  * Dijalankan terpisah dari unit test biasa: `pnpm test:integration`.
- * Tidak masuk CI (belum ada service Postgres di GitHub Actions).
+ * Di CI dijalankan job `integration` (.github/workflows/ci.yml) dengan service Postgres.
  */
 import { randomUUID } from "node:crypto";
 import { BadRequestException, ConflictException, NotFoundException } from "@nestjs/common";

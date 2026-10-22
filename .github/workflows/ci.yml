@@ -40,3 +40,63 @@ jobs:
 
       - name: Test
         run: pnpm run test
+
+  # Integration test SalesService dkk. (konkurensi, kunci baris, laci, laporan)
+  # terhadap Postgres sungguhan — skema dari migrasi Prisma yang sama dengan produksi.
+  integration:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: bisnismu
+          POSTGRES_PASSWORD: bisnismu
+          POSTGRES_DB: bisnismu_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U bisnismu -d bisnismu_ci"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      DATABASE_URL: "postgresql://bisnismu:bisnismu@localhost:5432/bisnismu_ci"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build @bisnismu/db
+        run: pnpm --filter @bisnismu/db run build
+
+      - name: Migrasi database
+        run: pnpm --filter @bisnismu/db exec prisma migrate deploy
+
+      - name: Integration test
+        run: pnpm --filter @bisnismu/api run test:integration
+
+  # Image produksi tetap bisa dibangun (Dockerfile & compose tidak rusak). Tanpa push.
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validasi docker-compose.yml
+        run: |
+          cp .env.example .env
+          docker compose config --quiet
+
+      - name: Build image api, migrate & web
+        run: docker compose build migrate api web
