@@ -6,6 +6,7 @@ import { PERMISSIONS } from "../../common/permissions/permissions";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import type { JwtPayload } from "../../common/interfaces/jwt-payload.interface";
 import { SalesService } from "./sales.service";
+import { PublicReceiptService } from "../public/public-receipt.service";
 import { CreateTransactionDto } from "./dto/create-transaction.dto";
 import { OpenBillDto } from "./dto/open-bill.dto";
 import { AddBillItemsDto } from "./dto/add-bill-items.dto";
@@ -19,7 +20,10 @@ import { RefundQuoteDto, RefundTransactionDto } from "./dto/refund-transaction.d
 @UseGuards(JwtAuthGuard)
 @Controller("transactions")
 export class SalesController {
-  constructor(private readonly salesService: SalesService) {}
+  constructor(
+    private readonly salesService: SalesService,
+    private readonly publicReceiptService: PublicReceiptService,
+  ) {}
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
@@ -87,6 +91,12 @@ export class SalesController {
     @Ip() ip: string,
   ) {
     return this.salesService.voidTransaction(user.business_id, id, dto.reason, { userId: user.sub, ip });
+  }
+
+  // Isi struk cetak — sama persis dengan struk publik /r/:token.
+  @Get(":id/receipt")
+  receipt(@CurrentUser() user: JwtPayload, @Param("id", ParseUUIDPipe) id: string) {
+    return this.publicReceiptService.getReceiptForBusiness(user.business_id, id);
   }
 
   @Get(":id/refundable")

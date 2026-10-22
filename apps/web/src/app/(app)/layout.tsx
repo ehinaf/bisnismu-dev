@@ -36,7 +36,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   if (!ready) return null;
 
   return (
-    <div className="min-h-screen lg:pl-[210px]">
+    <div className="min-h-screen lg:pl-[210px] print:pl-0">
       <Sidebar openOrdersCount={openOrdersCount} />
       <MobileSidebar open={menuOpen} onClose={() => setMenuOpen(false)} openOrdersCount={openOrdersCount} />
       <div className="flex min-h-screen flex-col">

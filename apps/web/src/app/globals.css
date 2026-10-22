@@ -66,4 +66,18 @@
   .no-print {
     display: none !important;
   }
+
+  /* Kertas selalu putih: mode gelap tidak boleh menghasilkan teks terang, dan
+     printer thermal hanya mencetak hitam — abu-abu dicetak pudar/berbintik. */
+  :root,
+  .dark {
+    color-scheme: light;
+    --background: 0 0% 100%;
+    --foreground: 0 0% 0%;
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 0%;
+    --border: 0 0% 0%;
+    --muted-foreground: 0 0% 0%;
+    --destructive: 0 0% 0%;
+  }
 }

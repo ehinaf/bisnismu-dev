@@ -5,10 +5,14 @@ import type { PrismaService } from "../../prisma/prisma.service";
 
 describe("PublicReceiptService", () => {
   const findUnique = jest.fn();
-  const service = new PublicReceiptService({ transaction: { findUnique } } as unknown as PrismaService);
+  const findFirst = jest.fn();
+  const service = new PublicReceiptService({ transaction: { findUnique, findFirst } } as unknown as PrismaService);
   const token = "0123456789abcdef0123456789abcdef";
 
-  beforeEach(() => findUnique.mockReset());
+  beforeEach(() => {
+    findUnique.mockReset();
+    findFirst.mockReset();
+  });
 
   it("token berformat salah → 404 tanpa query DB", async () => {
     await expect(service.getReceipt("../../etc")).rejects.toThrow(NotFoundException);
@@ -46,5 +50,14 @@ describe("PublicReceiptService", () => {
     }
     expect(JSON.stringify(receipt)).not.toMatch(/customer|cashier/);
     expect(receipt.payments).toEqual([{ method: "Tunai", amount: new Prisma.Decimal(10000) }]);
+  });
+
+  it("struk cetak di aplikasi: dicari lewat id + business_id, pilihan kolom sama dengan struk publik", async () => {
+    findFirst.mockResolvedValue(null);
+    await expect(service.getReceiptForBusiness("biz-1", "trx-lain")).rejects.toThrow(NotFoundException);
+    expect(findFirst).toHaveBeenCalledWith({ where: { id: "trx-lain", business_id: "biz-1" }, select: expect.any(Object) });
+
+    await service.getReceipt(token).catch(() => undefined);
+    expect(findFirst.mock.calls[0][0].select).toBe(findUnique.mock.calls[0][0].select);
   });
 });

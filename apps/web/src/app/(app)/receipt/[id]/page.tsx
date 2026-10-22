@@ -4,16 +4,15 @@ import { Suspense, use, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Ban, ChevronLeft, Printer, Share2, Undo2 } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { VoidDialog } from "@/components/pos/void-dialog";
 import { RefundDialog } from "@/components/pos/refund-dialog";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ReceiptPaper } from "@/components/receipt/receipt-paper";
 import { apiClient, ApiError } from "@/lib/api-client";
 import { formatCurrency } from "@/lib/format";
 import { PERMISSIONS, usePermissions } from "@/lib/hooks/use-permissions";
 import { toast } from "@/lib/stores/toast-store";
-import type { TransactionDetail } from "@/lib/types";
+import type { PublicReceipt, TransactionDetail } from "@/lib/types";
 
 export default function ReceiptPage(props: { params: Promise<{ id: string }> }) {
   return (
@@ -28,16 +27,23 @@ function ReceiptPageContent({ params }: { params: Promise<{ id: string }> }) {
   const searchParams = useSearchParams();
   const router = useRouter();
   const [transaction, setTransaction] = useState<TransactionDetail | null>(null);
+  const [receipt, setReceipt] = useState<PublicReceipt | null>(null);
   const [error, setError] = useState<string | null>(null);
   const autoActionDone = useRef(false);
   const permissions = usePermissions();
   const [voidOpen, setVoidOpen] = useState(false);
   const [refundOpen, setRefundOpen] = useState(false);
 
+  // Detail (untuk void/refund) + isi struk cetak (sama dengan struk publik).
   function loadTransaction() {
-    apiClient
-      .get<TransactionDetail>(`/transactions/${id}`)
-      .then(setTransaction)
+    Promise.all([
+      apiClient.get<TransactionDetail>(`/transactions/${id}`),
+      apiClient.get<PublicReceipt>(`/transactions/${id}/receipt`),
+    ])
+      .then(([detail, paper]) => {
+        setTransaction(detail);
+        setReceipt(paper);
+      })
       .catch((err) => setError(err instanceof ApiError ? err.message : "Gagal memuat struk."));
   }
 
@@ -73,101 +79,37 @@ function ReceiptPageContent({ params }: { params: Promise<{ id: string }> }) {
     !!permissions?.includes(PERMISSIONS.REFUND_TRANSACTION);
 
   return (
-    <div className="mx-auto flex max-w-md flex-col gap-4 p-4 sm:p-6">
+    <div className="mx-auto flex max-w-md flex-col gap-4 p-4 sm:p-6 print:max-w-none print:p-0">
       <Link
         href="/transactions"
         className="no-print inline-flex w-fit items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground"
       >
         <ChevronLeft className="h-4 w-4" /> Transaksi baru
       </Link>
-      <Card>
-        <CardHeader>
-          <div className="flex items-start justify-between gap-2">
-            <CardTitle>
-              {isRefund ? "Struk Refund" : "Struk"} {transaction.transaction_number}
-            </CardTitle>
-            {transaction.status === "void" && <Badge variant="danger">DIBATALKAN</Badge>}
-            {transaction.status === "refunded" && <Badge variant="warning">DIREFUND</Badge>}
-            {transaction.status === "partially_refunded" && <Badge variant="warning">REFUND SEBAGIAN</Badge>}
-          </div>
-          <p className="text-xs text-muted-foreground">{new Date(transaction.created_at).toLocaleString("id-ID")}</p>
+      {receipt && <ReceiptPaper receipt={receipt} />}
+
+      {/* Info untuk kasir/pemilik — tidak ikut tercetak di struk pembeli. */}
+      {((isRefund && transaction.reference_transaction) ||
+        (transaction.status === "void" && transaction.void_reason) ||
+        transaction.refund_transactions.length > 0) && (
+        <div className="no-print flex flex-col gap-2 rounded-xl border border-border bg-card p-4 text-sm">
           {isRefund && transaction.reference_transaction && (
-            <p className="text-xs text-muted-foreground">
+            <p className="text-muted-foreground">
               Refund untuk{" "}
-              <Link href={`/receipt/${transaction.reference_transaction.id}`} className="font-medium text-primary underline underline-offset-2">
+              <Link
+                href={`/receipt/${transaction.reference_transaction.id}`}
+                className="font-medium text-primary underline underline-offset-2"
+              >
                 {transaction.reference_transaction.transaction_number}
               </Link>
               {transaction.notes && ` · Alasan: ${transaction.notes}`}
             </p>
           )}
           {transaction.status === "void" && transaction.void_reason && (
-            <p className="text-xs text-destructive">Alasan: {transaction.void_reason}</p>
+            <p className="text-destructive">Alasan pembatalan: {transaction.void_reason}</p>
           )}
-        </CardHeader>
-        <CardContent className="flex flex-col gap-3">
-          <div className="flex flex-col gap-1 border-b border-border pb-3">
-            {transaction.items.map((item) => (
-              <div key={item.id} className="flex justify-between text-sm">
-                <span>
-                  {/* Struk refund: qty tercatat negatif — tanda minus cukup di nominal. */}
-                  {item.item_name_snapshot}
-                  {item.variant_name_snapshot && ` (${item.variant_name_snapshot})`} x
-                  {isRefund ? item.quantity.replace(/^-/, "") : item.quantity}
-                  {item.modifiers.length > 0 && (
-                    <span className="block text-xs text-muted-foreground">
-                      {item.modifiers.map((m) => m.modifier_name_snapshot).join(", ")}
-                    </span>
-                  )}
-                </span>
-                <span>{formatCurrency(item.subtotal)}</span>
-              </div>
-            ))}
-          </div>
-
-          <div className="flex flex-col gap-1 border-b border-border pb-3 text-sm">
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Subtotal</span>
-              <span>{formatCurrency(transaction.subtotal)}</span>
-            </div>
-            {Number(transaction.tax_total) > 0 && (
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Pajak</span>
-                <span>{formatCurrency(transaction.tax_total)}</span>
-              </div>
-            )}
-            {Number(transaction.service_charge_total) > 0 && (
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Service Charge</span>
-                <span>{formatCurrency(transaction.service_charge_total)}</span>
-              </div>
-            )}
-            {Number(transaction.rounding_adjustment) !== 0 && (
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Pembulatan</span>
-                <span>{formatCurrency(transaction.rounding_adjustment)}</span>
-              </div>
-            )}
-            <div className="flex justify-between text-base font-semibold">
-              <span>Total</span>
-              <span className="tabular-nums">{formatCurrency(transaction.total)}</span>
-            </div>
-          </div>
-
-          <div className="flex flex-col gap-1 text-sm">
-            {transaction.payments.map((p) => (
-              <div key={p.id} className="flex justify-between">
-                <span className="text-muted-foreground">{p.channel_name_snapshot}</span>
-                <span>{formatCurrency(p.amount)}</span>
-              </div>
-            ))}
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Kembalian</span>
-              <span>{formatCurrency(transaction.change_due)}</span>
-            </div>
-          </div>
-
           {transaction.refund_transactions.length > 0 && (
-            <div className="flex flex-col gap-1 border-t border-border pt-3 text-sm">
+            <div className="flex flex-col gap-1">
               <p className="text-xs font-medium text-muted-foreground">Refund</p>
               {transaction.refund_transactions.map((r) => (
                 <Link key={r.id} href={`/receipt/${r.id}`} className="flex justify-between hover:underline">
@@ -179,8 +121,8 @@ function ReceiptPageContent({ params }: { params: Promise<{ id: string }> }) {
               ))}
             </div>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      )}
 
       <div className="no-print flex gap-2">
         <Button variant="outline" className="flex-1" onClick={() => window.print()}>
