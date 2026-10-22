@@ -42,3 +42,6 @@ coverage/
 # Temporary
 tmp/
 temp/
+
+# Backup database lokal (deploy)
+backups/

@@ -1,0 +1,18 @@
+# Konteks build Docker: hanya sumber yang dibutuhkan — dependensi, hasil build,
+# dan rahasia selalu dibuat/diisi di dalam image atau lewat env compose.
+**/node_modules
+**/dist
+**/.next
+**/generated
+**/tsconfig.tsbuildinfo
+**/.env
+**/.env.*
+!**/.env.example
+.git
+.github
+.claude
+.mcp.json
+docs
+backups
+deploy
+*.md

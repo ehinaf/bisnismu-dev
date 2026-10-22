@@ -1,0 +1,22 @@
+# Satu pintu BisnisMu: web di "/", API di "/api" (satu domain → cookie sesi
+# & CORS sederhana). HTTPS disediakan di depan oleh Cloudflare Tunnel atau
+# Tailscale; Caddy sendiri melayani HTTP di jaringan internal.
+{
+	servers {
+		# Hop di jaringan privat (cloudflared, proxy LAN) dipercaya — X-Forwarded-For
+		# dari mereka dipertahankan supaya API melihat IP klien asli.
+		trusted_proxies static private_ranges
+	}
+}
+
+:80 {
+	encode zstd gzip
+
+	handle_path /api/* {
+		reverse_proxy api:3001
+	}
+
+	handle {
+		reverse_proxy web:3000
+	}
+}

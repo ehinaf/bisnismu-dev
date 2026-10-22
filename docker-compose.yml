@@ -1,0 +1,116 @@
+# BisnisMu — deploy produksi (VM Proxmox). Salin .env.example → .env, isi, lalu:
+#   docker compose up -d --build
+# Layanan: postgres · migrate (one-shot) · api · web · caddy (satu pintu) · backup
+# Opsional: cloudflared (profil "tunnel") untuk HTTPS via Cloudflare Tunnel.
+name: bisnismu
+
+x-database-url: &database-url
+  DATABASE_URL: postgresql://${POSTGRES_USER:-bisnismu}:${POSTGRES_PASSWORD:?Isi POSTGRES_PASSWORD di .env}@postgres:5432/${POSTGRES_DB:-bisnismu}
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-bisnismu}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Isi POSTGRES_PASSWORD di .env}
+      POSTGRES_DB: ${POSTGRES_DB:-bisnismu}
+      TZ: ${TZ:-Asia/Jakarta}
+    # Tanpa port publik: hanya bisa diakses layanan di jaringan compose.
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  migrate:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+      target: migrate
+    environment:
+      <<: *database-url
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+      target: runtime
+    restart: unless-stopped
+    environment:
+      <<: *database-url
+      NODE_ENV: production
+      PORT: "3001"
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?Isi JWT_ACCESS_SECRET di .env}
+      JWT_ACCESS_EXPIRES_IN: ${JWT_ACCESS_EXPIRES_IN:-15m}
+      CORS_ORIGIN: ${PUBLIC_URL:?Isi PUBLIC_URL di .env}
+      PUBLIC_RECEIPT_BASE_URL: ${PUBLIC_URL}/r
+      # Hop di jaringan privat (Caddy, cloudflared) dipercaya → req.ip = IP klien asli.
+      TRUST_PROXY: ${TRUST_PROXY:-loopback,linklocal,uniquelocal}
+      TZ: ${TZ:-Asia/Jakarta}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: /api
+    restart: unless-stopped
+    environment:
+      TZ: ${TZ:-Asia/Jakarta}
+
+  caddy:
+    image: caddy:2.8-alpine
+    restart: unless-stopped
+    ports:
+      - "${HTTP_PORT:-80}:80"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+    depends_on:
+      - api
+      - web
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    profiles: ["tunnel"]
+    restart: unless-stopped
+    # Arahkan public hostname tunnel ke http://caddy:80 di dashboard Cloudflare.
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    depends_on:
+      - caddy
+
+  backup:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "/backup.sh"]
+    environment:
+      PGHOST: postgres
+      PGUSER: ${POSTGRES_USER:-bisnismu}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?Isi POSTGRES_PASSWORD di .env}
+      PGDATABASE: ${POSTGRES_DB:-bisnismu}
+      BACKUP_TIME: ${BACKUP_TIME:-02:00}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-14}
+      TZ: ${TZ:-Asia/Jakarta}
+    volumes:
+      - ./deploy/backup/backup.sh:/backup.sh:ro
+      # Arahkan BACKUP_DIR ke mount NAS supaya backup tidak ikut hilang bila VM rusak.
+      - ${BACKUP_DIR:-./backups}:/backups
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  caddy_data:
