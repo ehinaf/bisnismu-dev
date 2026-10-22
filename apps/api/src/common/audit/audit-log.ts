@@ -9,6 +9,10 @@ export const AUDIT_ACTIONS = {
   ADJUST_STOCK: "adjust_stock",
   UPDATE_USER_PERMISSIONS: "update_user_permissions",
   SET_PIN: "set_pin",
+  CREATE_USER: "create_user",
+  UPDATE_USER: "update_user",
+  CREATE_PAYMENT_CHANNEL: "create_payment_channel",
+  UPDATE_PAYMENT_CHANNEL: "update_payment_channel",
 } as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[keyof typeof AUDIT_ACTIONS];

@@ -11,6 +11,7 @@ import { TaxController } from "./tax.controller";
 import { TaxService } from "./tax.service";
 import { UserPermissionController } from "./user-permission.controller";
 import { UserPermissionService } from "./user-permission.service";
+import { UserService } from "./user.service";
 
 @Module({
   controllers: [
@@ -21,6 +22,14 @@ import { UserPermissionService } from "./user-permission.service";
     TaxController,
     UserPermissionController,
   ],
-  providers: [BusinessService, OutletService, PaymentChannelService, DiningTableService, TaxService, UserPermissionService],
+  providers: [
+    BusinessService,
+    OutletService,
+    PaymentChannelService,
+    DiningTableService,
+    TaxService,
+    UserPermissionService,
+    UserService,
+  ],
 })
 export class TenantModule {}
