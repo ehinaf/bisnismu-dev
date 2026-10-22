@@ -7,3 +7,5 @@ allowBuilds:
   esbuild: true
   prisma: true
   sharp: true
+  # Dependensi eslint-config-next; memakai binary prebuilt, script install tidak diperlukan.
+  unrs-resolver: false

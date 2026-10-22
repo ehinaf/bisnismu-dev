@@ -45,6 +45,8 @@ export function Modal({
     return () => {
       if (--scrollLocks === 0) document.body.style.overflow = "";
       // Panel masih terpasang = StrictMode menjalankan ulang efek, bukan modal ditutup.
+      // Nilai ref SAAT cleanup memang yang dibutuhkan di sini (bukan salinan saat efek jalan).
+      // eslint-disable-next-line react-hooks/exhaustive-deps
       if (panelRef.current?.isConnected) return;
       const opener = restoreFocusRef.current;
       restoreFocusRef.current = null;

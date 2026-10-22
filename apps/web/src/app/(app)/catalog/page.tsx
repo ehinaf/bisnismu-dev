@@ -115,7 +115,6 @@ export default function CatalogPage() {
 
   useEffect(() => {
     if (ready) loadAll();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready]);
 
   function openCreateForm() {
