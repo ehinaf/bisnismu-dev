@@ -98,6 +98,9 @@ export interface Unit {
 export interface Outlet {
   id: string;
   name: string;
+  address: string | null;
+  phone: string | null;
+  is_active: boolean;
 }
 
 export type TableStatus = "available" | "occupied" | "reserved" | "inactive";
@@ -126,6 +129,11 @@ export interface PaymentChannel {
   id: string;
   name: string;
   channel_type: string;
+  /** MDR dalam persen ("0.7" = 0,7%). */
+  fee_percentage: string;
+  fee_fixed: string;
+  is_active: boolean;
+  sort_order: number;
 }
 
 // Hasil POST /transactions/quote & /transactions/:id/quote — angka final dari
@@ -309,11 +317,13 @@ export interface RefundQuote {
 }
 
 // GET /tenant/users — halaman Pengaturan (izin pengguna).
+export type UserRole = "owner" | "admin" | "manager" | "cashier" | "staff";
+
 export interface BusinessUser {
   id: string;
   name: string;
   email: string | null;
-  role: "owner" | "admin" | "manager" | "cashier" | "staff";
+  role: UserRole;
   is_active: boolean;
   permissions: string[];
 }

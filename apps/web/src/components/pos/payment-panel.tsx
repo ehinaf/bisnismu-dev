@@ -1,34 +1,17 @@
 "use client";
 
 import { useState } from "react";
-import {
-  Banknote,
-  CreditCard,
-  Landmark,
-  Plus,
-  QrCode,
-  Trash2,
-  Wallet,
-  type LucideIcon,
-} from "lucide-react";
+import { Plus, Trash2, Wallet } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { MoneyInput } from "@/components/ui/money-input";
 import { cn } from "@/lib/utils";
+import { CHANNEL_ICONS } from "@/lib/payment-channels";
 import { formatCurrency } from "@/lib/format";
 import { checkPayments } from "@/lib/payment-rules";
 import { suggestCashAmounts } from "@/lib/quick-cash";
 import { previewRounding, previewTaxes } from "@/lib/pos-pricing";
 import { useCartStore } from "@/lib/stores/cart-store";
 import type { CheckoutQuote, PaymentChannel, RoundingMode, Tax } from "@/lib/types";
-
-const CHANNEL_ICONS: Record<string, LucideIcon> = {
-  cash: Banknote,
-  qris: QrCode,
-  e_wallet: Wallet,
-  bank_transfer: Landmark,
-  debit: CreditCard,
-  credit: CreditCard,
-};
 
 const CHANNEL_COLORS: Record<string, string> = {
   cash: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400",
