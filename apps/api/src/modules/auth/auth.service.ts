@@ -33,6 +33,14 @@ export const REFRESH_ROTATION_GRACE_MS = 30_000;
 export const PIN_MAX_ATTEMPTS = 5;
 export const PIN_LOCK_MS = 5 * 60_000;
 
+// Belum ada CRUD metode pembayaran — tanpa ini bisnis baru tidak bisa berjualan.
+// Biaya QRIS 0: MDR usaha mikro untuk transaksi ≤ Rp500rb memang 0%.
+export const DEFAULT_PAYMENT_CHANNELS = [
+  { name: "Tunai", channel_type: "cash", sort_order: 1 },
+  { name: "QRIS", channel_type: "qris", sort_order: 2 },
+  { name: "Transfer Bank", channel_type: "bank_transfer", sort_order: 3 },
+];
+
 function hashToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
 }
@@ -106,6 +114,9 @@ export class AuthService {
       });
       await tx.businessSetting.create({
         data: { business_id: business.id },
+      });
+      await tx.paymentChannel.createMany({
+        data: DEFAULT_PAYMENT_CHANNELS.map((c) => ({ ...c, business_id: business.id })),
       });
       return tx.user.create({
         data: {

@@ -89,10 +89,12 @@ describe("AuthService", () => {
         updated_at: new Date(),
         deleted_at: null,
       };
+      const paymentChannelCreateMany = jest.fn().mockResolvedValue({ count: 3 });
       prisma.$transaction.mockImplementation(async (fn: any) =>
         fn({
           business: { create: jest.fn().mockResolvedValue({ id: "biz-1" }) },
           businessSetting: { create: jest.fn().mockResolvedValue({}) },
+          paymentChannel: { createMany: paymentChannelCreateMany },
           user: { create: jest.fn().mockResolvedValue(createdUser) },
         }),
       );
@@ -108,6 +110,10 @@ describe("AuthService", () => {
       expect((result.user as any).password_hash).toBeUndefined();
       expect(result.tokens.accessToken).toEqual(expect.any(String));
       expect(result.tokens.refreshToken).toEqual(expect.any(String));
+      // Bisnis baru langsung bisa berjualan: Tunai (wajib untuk laci kas) + QRIS + Transfer.
+      const channels = paymentChannelCreateMany.mock.calls[0][0].data;
+      expect(channels.map((c: any) => c.channel_type)).toEqual(["cash", "qris", "bank_transfer"]);
+      expect(channels.every((c: any) => c.business_id === "biz-1")).toBe(true);
     });
 
     it("menolak registrasi jika email sudah dipakai", async () => {
