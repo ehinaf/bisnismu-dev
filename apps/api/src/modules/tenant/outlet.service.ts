@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service";
 import { CreateOutletDto } from "./dto/create-outlet.dto";
 import { UpdateOutletDto } from "./dto/update-outlet.dto";
@@ -46,8 +46,19 @@ export class OutletService {
     });
   }
 
+  /** Bisnis tanpa outlet aktif tidak bisa membuka laci kas maupun berjualan. */
+  private async assertNotLastActive(business_id: string, id: string) {
+    const others = await this.prisma.outlet.count({
+      where: { business_id, deleted_at: null, is_active: true, id: { not: id } },
+    });
+    if (others === 0) {
+      throw new BadRequestException("Minimal satu outlet harus aktif");
+    }
+  }
+
   async update(business_id: string, id: string, dto: UpdateOutletDto) {
     await this.getOne(business_id, id);
+    if (dto.is_active === false) await this.assertNotLastActive(business_id, id);
     return this.prisma.outlet.update({
       where: { id },
       data: dto,
@@ -56,6 +67,7 @@ export class OutletService {
 
   async softDelete(business_id: string, id: string) {
     await this.getOne(business_id, id);
+    await this.assertNotLastActive(business_id, id);
     return this.prisma.outlet.update({
       where: { id },
       data: { deleted_at: new Date(), is_active: false },

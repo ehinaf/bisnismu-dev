@@ -33,7 +33,7 @@ export const REFRESH_ROTATION_GRACE_MS = 30_000;
 export const PIN_MAX_ATTEMPTS = 5;
 export const PIN_LOCK_MS = 5 * 60_000;
 
-// Belum ada CRUD metode pembayaran — tanpa ini bisnis baru tidak bisa berjualan.
+// Metode bawaan bisnis baru — tanpa ini kasir tidak bisa menerima pembayaran.
 // Biaya QRIS 0: MDR usaha mikro untuk transaksi ≤ Rp500rb memang 0%.
 export const DEFAULT_PAYMENT_CHANNELS = [
   { name: "Tunai", channel_type: "cash", sort_order: 1 },
@@ -115,6 +115,8 @@ export class AuthService {
       await tx.businessSetting.create({
         data: { business_id: business.id },
       });
+      // Outlet pertama dinamai sama dengan usaha; bisa diganti di Pengaturan.
+      await tx.outlet.create({ data: { business_id: business.id, name: dto.business_name } });
       await tx.paymentChannel.createMany({
         data: DEFAULT_PAYMENT_CHANNELS.map((c) => ({ ...c, business_id: business.id })),
       });

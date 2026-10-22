@@ -1,12 +1,12 @@
 import { Test } from "@nestjs/testing";
-import { NotFoundException } from "@nestjs/common";
+import { BadRequestException, NotFoundException } from "@nestjs/common";
 import { OutletService } from "./outlet.service";
 import { PrismaService } from "../../prisma/prisma.service";
 
 describe("OutletService", () => {
   let service: OutletService;
   let prisma: {
-    outlet: { findMany: jest.Mock; findFirst: jest.Mock; create: jest.Mock; update: jest.Mock };
+    outlet: { findMany: jest.Mock; findFirst: jest.Mock; create: jest.Mock; update: jest.Mock; count: jest.Mock };
     $transaction: jest.Mock;
   };
 
@@ -17,6 +17,7 @@ describe("OutletService", () => {
         findFirst: jest.fn(),
         create: jest.fn(),
         update: jest.fn(),
+        count: jest.fn().mockResolvedValue(1),
       },
       $transaction: jest.fn(),
     };
@@ -94,6 +95,24 @@ describe("OutletService", () => {
       where: { id: "o1" },
       data: { deleted_at: expect.any(Date), is_active: false },
     });
+  });
+
+  it("softDelete() menolak menghapus outlet aktif terakhir", async () => {
+    prisma.outlet.findFirst.mockResolvedValue({ id: "o1", business_id: "biz-1" });
+    prisma.outlet.count.mockResolvedValue(0);
+    await expect(service.softDelete("biz-1", "o1")).rejects.toThrow(BadRequestException);
+    expect(prisma.outlet.count).toHaveBeenCalledWith({
+      where: { business_id: "biz-1", deleted_at: null, is_active: true, id: { not: "o1" } },
+    });
+    expect(prisma.outlet.update).not.toHaveBeenCalled();
+  });
+
+  it("update() menolak menonaktifkan outlet aktif terakhir, tapi boleh ubah nama", async () => {
+    prisma.outlet.findFirst.mockResolvedValue({ id: "o1", business_id: "biz-1" });
+    prisma.outlet.count.mockResolvedValue(0);
+    await expect(service.update("biz-1", "o1", { is_active: false })).rejects.toThrow(BadRequestException);
+    await service.update("biz-1", "o1", { name: "Toko Pusat" });
+    expect(prisma.outlet.update).toHaveBeenCalledWith({ where: { id: "o1" }, data: { name: "Toko Pusat" } });
   });
 
   it("softDelete() menolak outlet yang tidak ditemukan di business tsb", async () => {
