@@ -184,9 +184,12 @@ export default function TransactionsPage() {
   const handleSubmit = useCallback(
     async (action: "save" | "print" | "wa") => {
       if (!activeOutletId || items.length === 0) return;
-      if (payments.length === 0) {
-        // Hanya bisa terjadi lewat F9 — tombol Simpan nonaktif tanpa metode bayar.
-        toast.info("Pilih metode pembayaran dulu.");
+      // Baris Rp 0 wajar sebagai keadaan sementara (mis. metode kedua ditambah
+      // setelah tagihan tertutup) — tidak dikirim, server menolak nominal 0.
+      const filledPayments = payments.filter((p) => p.amount > 0);
+      if (filledPayments.length === 0) {
+        // Hanya bisa terjadi lewat F9 — tombol Simpan nonaktif selama tagihan belum tertutup.
+        toast.info(payments.length === 0 ? "Pilih metode pembayaran dulu." : "Isi nominal pembayaran dulu.");
         return;
       }
       setSubmitting(true);
@@ -201,7 +204,7 @@ export default function TransactionsPage() {
           notes: orderNotes.trim() || undefined,
           voucher_code: voucherCode ?? undefined,
           items: items.map(toTransactionLine),
-          payments: payments.map((p) => ({
+          payments: filledPayments.map((p) => ({
             payment_channel_id: p.payment_channel_id,
             amount: p.amount,
             is_receivable: p.is_receivable,
