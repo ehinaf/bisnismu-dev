@@ -9,6 +9,9 @@ import { UpdateUserPermissionsDto } from "./dto/update-user-permissions.dto";
 import { UserService } from "./user.service";
 import { CreateUserDto } from "./dto/create-user.dto";
 import { UpdateUserDto } from "./dto/update-user.dto";
+import { SetUserPinDto } from "./dto/set-user-pin.dto";
+import { Throttle } from "@nestjs/throttler";
+import { CREDENTIAL_THROTTLE } from "../auth/pin";
 
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles("owner", "admin")
@@ -37,6 +40,17 @@ export class UserPermissionController {
     @Ip() ip: string,
   ) {
     return this.userService.update(user, id, dto, { userId: user.sub, ip });
+  }
+
+  @Put(":id/pin")
+  @Throttle(CREDENTIAL_THROTTLE)
+  setPin(
+    @CurrentUser() user: JwtPayload,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body() dto: SetUserPinDto,
+    @Ip() ip: string,
+  ) {
+    return this.userService.setPin(user, id, dto.pin, { userId: user.sub, ip });
   }
 
   @Get(":id/permissions")

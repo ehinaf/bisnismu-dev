@@ -6,6 +6,7 @@ import { RegisterBusinessDto } from "./dto/register-business.dto";
 import { LoginDto } from "./dto/login.dto";
 import { LoginPinDto } from "./dto/login-pin.dto";
 import { SetPinDto } from "./dto/set-pin.dto";
+import { CREDENTIAL_THROTTLE } from "./pin";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
 import { RolesGuard } from "../../common/guards/roles.guard";
 import { Roles } from "../../common/decorators/roles.decorator";
@@ -15,7 +16,6 @@ import type { AuthTokens } from "./auth.service";
 
 const REFRESH_COOKIE = "refresh_token";
 // Batas ketat untuk endpoint yang menerima kredensial (tebak password/PIN).
-const CREDENTIAL_THROTTLE = { default: { limit: 10, ttl: 60_000 } };
 
 @Controller("auth")
 export class AuthController {

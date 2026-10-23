@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { apiClient, ApiError } from "@/lib/api-client";
+import { rememberDeviceBusiness } from "@/lib/device";
 import { saveAuth, type AuthUser } from "@/lib/auth";
 
 interface RegisterResponse {
@@ -37,6 +38,7 @@ export default function RegisterPage() {
     try {
       const result = await apiClient.post<RegisterResponse>("/auth/register", form, { auth: false });
       saveAuth(result.accessToken, result.user);
+      await rememberDeviceBusiness();
       router.replace("/transactions");
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Gagal mendaftar. Coba lagi.");

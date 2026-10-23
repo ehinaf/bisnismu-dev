@@ -17,13 +17,16 @@ describe("UserService", () => {
   beforeEach(async () => {
     tx = {
       user: {
-        create: jest.fn().mockImplementation(({ data }) => ({ id: "new-1", ...data, is_active: true, permissions: [] })),
+        create: jest
+          .fn()
+          .mockImplementation(({ data }) => ({ id: "new-1", ...data, is_active: true, pin_code: null, permissions: [] })),
         update: jest.fn().mockImplementation(({ data }) => ({
           id: "u-1",
           name: data.name ?? "Kasir",
           role: data.role ?? "cashier",
           is_active: data.is_active ?? true,
           email: "kasir@x.test",
+          pin_code: data.pin_code ?? null,
           permissions: [{ permission_key: "void_transaction" }],
         })),
       },
@@ -31,7 +34,7 @@ describe("UserService", () => {
       auditLog: { create: jest.fn().mockResolvedValue({}) },
     };
     prisma = {
-      user: { findFirst: jest.fn() },
+      user: { findFirst: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
       $transaction: jest.fn().mockImplementation((fn: (t: unknown) => unknown) => fn(tx)),
     };
     const moduleRef = await Test.createTestingModule({
@@ -52,6 +55,8 @@ describe("UserService", () => {
       expect(data.password_hash).not.toBe("rahasia123");
       expect(await argon2.verify(data.password_hash, "rahasia123")).toBe(true);
       expect(result.permissions).toEqual([]);
+      expect(result).toMatchObject({ has_pin: false });
+      expect(result).not.toHaveProperty("pin_code");
 
       const log = tx.auditLog.create.mock.calls[0][0].data;
       expect(log.action).toBe("create_user");
@@ -132,6 +137,38 @@ describe("UserService", () => {
     it("user bisnis lain → NotFound", async () => {
       prisma.user.findFirst.mockResolvedValue(null);
       await expect(service.update(owner, "u-lain", { name: "X" }, audit)).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe("setPin", () => {
+    it("menyimpan hash PIN (bukan PIN mentah), has_pin true, audit tanpa nilai PIN", async () => {
+      prisma.user.findFirst.mockResolvedValue({ id: "u-1", role: "cashier" });
+      const result = await service.setPin(owner, "u-1", "482913", audit);
+
+      const data = tx.user.update.mock.calls[0][0].data;
+      expect(data.pin_code).not.toBe("482913");
+      expect(await argon2.verify(data.pin_code, "482913")).toBe(true);
+      expect(result).toMatchObject({ has_pin: true });
+      expect(result).not.toHaveProperty("pin_code");
+      const log = tx.auditLog.create.mock.calls[0][0].data;
+      expect(log.action).toBe("set_pin");
+      expect(JSON.stringify(log)).not.toContain("482913");
+    });
+
+    it("PIN yang sudah dipakai user aktif lain di bisnis ini ditolak", async () => {
+      prisma.user.findFirst.mockResolvedValue({ id: "u-1", role: "cashier" });
+      prisma.user.findMany.mockResolvedValue([{ pin_code: await argon2.hash("482913", { type: argon2.argon2id }) }]);
+      await expect(service.setPin(owner, "u-1", "482913", audit)).rejects.toThrow(ConflictException);
+      expect(prisma.user.findMany.mock.calls[0][0].where).toMatchObject({ business_id: "biz-1", id: { not: "u-1" } });
+      expect(tx.user.update).not.toHaveBeenCalled();
+    });
+
+    it("tidak untuk akun sendiri atau pemilik; admin tidak untuk admin lain", async () => {
+      prisma.user.findFirst.mockResolvedValue({ id: "owner-1", role: "owner" });
+      await expect(service.setPin(owner, "owner-1", "1234", audit)).rejects.toThrow(ForbiddenException);
+      prisma.user.findFirst.mockResolvedValue({ id: "admin-2", role: "admin" });
+      await expect(service.setPin(admin, "admin-2", "1234", audit)).rejects.toThrow(ForbiddenException);
+      expect(tx.user.update).not.toHaveBeenCalled();
     });
   });
 });

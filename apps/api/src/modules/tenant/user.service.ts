@@ -6,6 +6,7 @@ import type { JwtPayload } from "../../common/interfaces/jwt-payload.interface";
 import { CreateUserDto } from "./dto/create-user.dto";
 import { UpdateUserDto } from "./dto/update-user.dto";
 import { manageableRoles } from "./staff-roles";
+import { assertPinAvailable, hashPin } from "../auth/pin";
 
 const USER_SELECT = {
   id: true,
@@ -13,13 +14,15 @@ const USER_SELECT = {
   email: true,
   role: true,
   is_active: true,
+  pin_code: true,
   permissions: { select: { permission_key: true } },
 } as const;
 
-type SelectedUser = { permissions: { permission_key: string }[] } & Record<string, unknown>;
+type SelectedUser = { pin_code: string | null; permissions: { permission_key: string }[] };
 
-function toBusinessUser<T extends SelectedUser>(u: T) {
-  return { ...u, permissions: u.permissions.map((p) => p.permission_key).sort() };
+/** Bentuk BusinessUser: hash PIN tidak pernah dikirim — cukup tahu PIN sudah diatur. */
+export function toBusinessUser<T extends SelectedUser>({ pin_code, ...u }: T) {
+  return { ...u, has_pin: pin_code !== null, permissions: u.permissions.map((p) => p.permission_key).sort() };
 }
 
 @Injectable()
@@ -97,6 +100,37 @@ export class UserService {
         oldValue: { name: target.name, role: target.role, is_active: target.is_active },
         // Password tidak pernah dicatat — hanya fakta bahwa password direset.
         newValue: { name: user.name, role: user.role, is_active: user.is_active, password_reset: !!password_hash },
+        ip: audit.ip,
+      });
+      return toBusinessUser(user);
+    });
+  }
+
+  /**
+   * Pemilik/admin mengatur PIN login cepat untuk staf (tanpa password lama —
+   * PIN sendiri lewat PUT /auth/pin yang meminta password).
+   */
+  async setPin(actor: JwtPayload, id: string, pin: string, audit: AuditActor) {
+    const target = await this.prisma.user.findFirst({
+      where: { id, business_id: actor.business_id, deleted_at: null },
+      select: { id: true, role: true },
+    });
+    if (!target) throw new NotFoundException("User tidak ditemukan");
+    if (target.id === actor.sub || !manageableRoles(actor.role).includes(target.role)) {
+      throw new ForbiddenException("Anda tidak boleh mengatur PIN pengguna ini");
+    }
+
+    await assertPinAvailable(this.prisma, actor.business_id, pin, target.id);
+    const pin_code = await hashPin(pin);
+    return this.prisma.$transaction(async (tx) => {
+      const user = await tx.user.update({ where: { id: target.id }, data: { pin_code }, select: USER_SELECT });
+      // Nilai PIN tidak pernah dicatat — hanya fakta bahwa PIN diganti.
+      await writeAuditLog(tx, {
+        businessId: actor.business_id,
+        userId: audit.userId,
+        action: AUDIT_ACTIONS.SET_PIN,
+        entityType: "user",
+        entityId: target.id,
         ip: audit.ip,
       });
       return toBusinessUser(user);

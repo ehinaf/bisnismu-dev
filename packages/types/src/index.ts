@@ -361,6 +361,8 @@ export interface BusinessUser {
   email: string | null;
   role: UserRole;
   is_active: boolean;
+  /** PIN login cepat sudah diatur (nilainya tidak pernah dikirim). */
+  has_pin: boolean;
   permissions: string[];
 }
 

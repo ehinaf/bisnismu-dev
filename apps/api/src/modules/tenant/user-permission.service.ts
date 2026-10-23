@@ -3,6 +3,7 @@ import type { Prisma } from "@bisnismu/db";
 import { PrismaService } from "../../prisma/prisma.service";
 import { AUDIT_ACTIONS, writeAuditLog, type AuditActor } from "../../common/audit/audit-log";
 import { UpdateUserPermissionsDto } from "./dto/update-user-permissions.dto";
+import { toBusinessUser } from "./user.service";
 
 @Injectable()
 export class UserPermissionService {
@@ -23,11 +24,12 @@ export class UserPermissionService {
         email: true,
         role: true,
         is_active: true,
+        pin_code: true,
         permissions: { select: { permission_key: true } },
       },
       orderBy: [{ role: "asc" }, { name: "asc" }],
     });
-    return users.map((u) => ({ ...u, permissions: u.permissions.map((p) => p.permission_key).sort() }));
+    return users.map(toBusinessUser);
   }
 
   async list(business_id: string, user_id: string) {

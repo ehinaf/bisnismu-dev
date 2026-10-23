@@ -18,6 +18,7 @@ import { RegisterBusinessDto } from "./dto/register-business.dto";
 import { LoginDto } from "./dto/login.dto";
 import { LoginPinDto } from "./dto/login-pin.dto";
 import { SetPinDto } from "./dto/set-pin.dto";
+import { assertPinAvailable, hashPin } from "./pin";
 
 export interface AuthTokens {
   accessToken: string;
@@ -276,23 +277,8 @@ export class AuthService {
       throw new UnauthorizedException("Password salah");
     }
 
-    const others = await this.prisma.user.findMany({
-      where: {
-        business_id: actor.business_id,
-        id: { not: user.id },
-        deleted_at: null,
-        is_active: true,
-        pin_code: { not: null },
-      },
-      select: { pin_code: true },
-    });
-    for (const other of others) {
-      if (other.pin_code && (await argon2.verify(other.pin_code, dto.pin))) {
-        throw new ConflictException("PIN ini sudah dipakai pengguna lain — pilih PIN lain");
-      }
-    }
-
-    const pin_code = await argon2.hash(dto.pin, { type: argon2.argon2id });
+    await assertPinAvailable(this.prisma, actor.business_id, dto.pin, user.id);
+    const pin_code = await hashPin(dto.pin);
     await this.prisma.$transaction(async (tx) => {
       await tx.user.update({ where: { id: user.id }, data: { pin_code } });
       // Nilai PIN tidak pernah dicatat — hanya fakta bahwa PIN diganti.

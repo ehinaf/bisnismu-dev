@@ -142,6 +142,7 @@ function UserMenu() {
             <p className="truncate text-sm font-medium">{user.name}</p>
             <p className="text-xs text-muted-foreground">{ROLE_LABELS[user.role] ?? user.role}</p>
           </div>
+          {/* Perangkat yang sudah dikenal langsung menampilkan keypad PIN untuk kasir berikutnya. */}
           <button
             type="button"
             onClick={async () => {
@@ -151,7 +152,7 @@ function UserMenu() {
             className="flex w-full items-center gap-2 px-3 py-2 text-sm text-destructive hover:bg-accent"
           >
             <LogOut className="h-4 w-4" />
-            Keluar
+            Keluar / ganti kasir
           </button>
         </div>
       )}

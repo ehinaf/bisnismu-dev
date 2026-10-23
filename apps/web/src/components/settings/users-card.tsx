@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Pencil, Plus, Users } from "lucide-react";
+import { KeyRound, Pencil, Plus, Users } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -65,6 +65,9 @@ export function UsersCard({ currentUserId, currentRole }: { currentUserId: strin
   const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [pendingToggle, setPendingToggle] = useState<BusinessUser | null>(null);
+  const [pinUser, setPinUser] = useState<BusinessUser | null>(null);
+  const [pin, setPin] = useState("");
+  const [pinError, setPinError] = useState<string | null>(null);
 
   const allowedRoles = manageableRoles(currentRole);
 
@@ -168,6 +171,28 @@ export function UsersCard({ currentUserId, currentRole }: { currentUserId: strin
     }
   }
 
+  function openPin(user: BusinessUser) {
+    setPin("");
+    setPinError(null);
+    setPinUser(user);
+  }
+
+  async function handleSavePin() {
+    if (!pinUser) return;
+    setPinError(null);
+    if (!/^\d{4,6}$/.test(pin)) return setPinError("PIN harus 4–6 digit angka.");
+    setSaving(true);
+    try {
+      replaceUser(await apiClient.put<BusinessUser>(`/tenant/users/${pinUser.id}/pin`, { pin }));
+      toast.success(`PIN ${pinUser.name} disimpan. Ia bisa masuk dengan PIN di perangkat kasir.`);
+      setPinUser(null);
+    } catch (err) {
+      setPinError(err instanceof ApiError ? err.message : "Gagal menyimpan PIN.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   const editingSelf = form?.id === currentUserId;
   const roleOptions = form?.id && editingSelf ? [form.role] : allowedRoles;
 
@@ -205,13 +230,19 @@ export function UsersCard({ currentUserId, currentRole }: { currentUserId: strin
                       <Badge variant="muted">{ROLE_LABELS[user.role]}</Badge>
                       {self && <Badge variant="info">Anda</Badge>}
                       {!user.is_active && <Badge variant="danger">Nonaktif</Badge>}
+                      {user.has_pin && <Badge variant="success">PIN aktif</Badge>}
                     </p>
                     {user.email && <p className="truncate text-xs text-muted-foreground">{user.email}</p>}
                     {editable && (
-                      <div className="mt-2 flex gap-2">
+                      <div className="mt-2 flex flex-wrap gap-2">
                         <Button size="sm" variant="outline" onClick={() => openEdit(user)}>
                           <Pencil className="h-3.5 w-3.5" /> Ubah
                         </Button>
+                        {!self && (
+                          <Button size="sm" variant="outline" onClick={() => openPin(user)}>
+                            <KeyRound className="h-3.5 w-3.5" /> {user.has_pin ? "Ganti PIN" : "Atur PIN"}
+                          </Button>
+                        )}
                         {!self && (
                           <Button size="sm" variant="ghost" onClick={() => setPendingToggle(user)}>
                             {user.is_active ? "Nonaktifkan" : "Aktifkan"}
@@ -323,6 +354,44 @@ export function UsersCard({ currentUserId, currentRole }: { currentUserId: strin
             </div>
           </form>
         )}
+      </Modal>
+
+      <Modal open={pinUser !== null} onClose={() => setPinUser(null)} title={`PIN ${pinUser?.name ?? ""}`}>
+        <form
+          className="flex flex-col gap-4"
+          onSubmit={(e) => {
+            e.preventDefault();
+            handleSavePin();
+          }}
+        >
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="user-pin">PIN baru (4–6 digit)</Label>
+            <Input
+              id="user-pin"
+              type="password"
+              inputMode="numeric"
+              autoComplete="off"
+              autoFocus
+              maxLength={6}
+              value={pin}
+              onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))}
+              className="text-lg tracking-[0.5em]"
+            />
+            <p className="text-xs text-muted-foreground">
+              Untuk masuk cepat di perangkat kasir. Tiap pengguna harus punya PIN berbeda; beri tahu PIN ini langsung ke
+              orangnya.
+            </p>
+          </div>
+          {pinError && <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">{pinError}</p>}
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="outline" onClick={() => setPinUser(null)}>
+              Batal
+            </Button>
+            <Button type="submit" disabled={saving}>
+              {saving ? "Menyimpan..." : "Simpan PIN"}
+            </Button>
+          </div>
+        </form>
       </Modal>
 
       <ConfirmDialog
