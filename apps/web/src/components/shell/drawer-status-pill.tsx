@@ -17,7 +17,7 @@ export function DrawerStatusPill() {
           : "bg-muted text-muted-foreground",
       )}
     >
-      <span className={cn("h-1.5 w-1.5 rounded-full", isOpen ? "bg-success" : "bg-zinc-400")} />
+      <span className={cn("h-1.5 w-1.5 rounded-full", isOpen ? "bg-success" : "bg-muted-foreground/50")} />
       {isOpen ? "Laci • Terbuka" : "Laci • Tertutup"}
     </span>
   );

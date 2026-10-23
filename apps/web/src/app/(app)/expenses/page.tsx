@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Modal } from "@/components/ui/modal";
 import { MoneyInput } from "@/components/ui/money-input";
 import { PageHeader } from "@/components/ui/page-header";
+import { Page } from "@/components/ui/page";
 import { Select } from "@/components/ui/select";
 import { apiClient, ApiError } from "@/lib/api-client";
 import { getUser } from "@/lib/auth";
@@ -165,9 +166,8 @@ export default function ExpensesPage() {
   if (!ready) return null;
 
   return (
-    <div className="mx-auto flex max-w-3xl flex-col gap-5 p-4 sm:p-6">
+    <Page width="wide">
       <PageHeader
-        icon={ReceiptText}
         title="Pengeluaran"
         description={`Biaya operasional${outlet ? ` · ${outlet.name}` : ""} — mengurangi laba bersih di Laporan`}
         action={
@@ -323,6 +323,6 @@ export default function ExpensesPage() {
           </form>
         )}
       </Modal>
-    </div>
+    </Page>
   );
 }

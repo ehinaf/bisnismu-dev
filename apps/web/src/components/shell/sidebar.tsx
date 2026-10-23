@@ -102,14 +102,14 @@ export function SidebarContent({
   );
 
   return (
-    <div className="flex h-full flex-col overflow-y-auto bg-zinc-950 text-zinc-400">
+    <div className="flex h-full flex-col overflow-y-auto border-r border-border bg-card text-muted-foreground">
       {/* Logo + outlet */}
       <div className="flex items-center gap-2.5 px-4 py-4">
         <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary text-sm font-bold text-primary-foreground">
           B
         </span>
         <div className="min-w-0 leading-tight">
-          <p className="truncate text-sm font-semibold text-white">BisnisMu</p>
+          <p className="truncate text-sm font-semibold text-foreground">BisnisMu</p>
           <OutletSwitcher />
         </div>
       </div>
@@ -126,7 +126,7 @@ export function SidebarContent({
               onClick={onNavigate}
               className={cn(
                 "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
-                active ? "bg-primary text-primary-foreground" : "hover:bg-zinc-900 hover:text-zinc-200",
+                active ? "bg-primary/10 text-primary" : "hover:bg-muted hover:text-foreground",
               )}
             >
               <Icon className="h-4 w-4 shrink-0" />
@@ -134,13 +134,13 @@ export function SidebarContent({
               {item.badge === "low-stock" && settings?.low_stock_alert && !!lowStockCount && (
                 <span
                   title={`${lowStockCount} produk menipis/habis`}
-                  className="flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-amber-500/20 px-1.5 text-xs font-semibold text-amber-300"
+                  className="flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-warning/15 px-1.5 text-xs font-semibold tabular-nums text-warning"
                 >
                   {lowStockCount}
                 </span>
               )}
               {item.badge === "open-orders" && !!openOrdersCount && (
-                <span className="flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-zinc-800 px-1.5 text-xs font-semibold text-zinc-200">
+                <span className="flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-muted px-1.5 text-xs font-semibold tabular-nums text-foreground">
                   {openOrdersCount}
                 </span>
               )}
@@ -155,13 +155,13 @@ export function SidebarContent({
       <ShiftPanel user={user} />
 
       {/* Bantuan & keluar */}
-      <div className="flex flex-col gap-0.5 border-t border-zinc-800 px-2.5 py-3">
+      <div className="flex flex-col gap-0.5 border-t border-border px-2.5 py-3">
         <Link
           href="/help"
           onClick={onNavigate}
           className={cn(
             "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
-            pathname.startsWith("/help") ? "bg-primary text-primary-foreground" : "hover:bg-zinc-900 hover:text-zinc-200",
+            pathname.startsWith("/help") ? "bg-primary/10 text-primary" : "hover:bg-muted hover:text-foreground",
           )}
         >
           <HelpCircle className="h-4 w-4" />
@@ -170,7 +170,7 @@ export function SidebarContent({
         <button
           type="button"
           onClick={handleLogout}
-          className="flex items-center gap-3 rounded-lg px-3 py-2 text-left text-sm font-medium transition-colors hover:bg-zinc-900 hover:text-zinc-200"
+          className="flex items-center gap-3 rounded-lg px-3 py-2 text-left text-sm font-medium transition-colors hover:bg-muted hover:text-foreground"
         >
           <LogOut className="h-4 w-4" />
           Keluar
@@ -186,7 +186,7 @@ function OutletSwitcher() {
   const active = useActiveOutlet();
 
   if (outlets.length <= 1) {
-    return <p className="truncate text-xs text-zinc-400">{active?.name ?? "Outlet"}</p>;
+    return <p className="truncate text-xs text-muted-foreground">{active?.name ?? "Outlet"}</p>;
   }
 
   return (
@@ -195,10 +195,10 @@ function OutletSwitcher() {
         value={active?.id ?? ""}
         onChange={(e) => setActiveOutlet(e.target.value)}
         aria-label="Pilih outlet"
-        className="w-full cursor-pointer appearance-none truncate bg-transparent pr-4 text-xs text-zinc-400 outline-none hover:text-zinc-300"
+        className="w-full cursor-pointer appearance-none truncate bg-transparent pr-4 text-xs text-muted-foreground outline-none hover:text-foreground"
       >
         {outlets.map((o) => (
-          <option key={o.id} value={o.id} className="bg-zinc-950 text-zinc-200">
+          <option key={o.id} value={o.id}>
             {o.name}
           </option>
         ))}

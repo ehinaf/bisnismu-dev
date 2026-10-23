@@ -11,8 +11,8 @@ import { MoneyInput } from "@/components/ui/money-input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { PageHeader } from "@/components/ui/page-header";
+import { Page } from "@/components/ui/page";
 import { VoidDialog } from "@/components/pos/void-dialog";
-import { LayoutGrid } from "lucide-react";
 import { apiClient, ApiError } from "@/lib/api-client";
 import { formatCurrency } from "@/lib/format";
 import { useCheckoutQuote } from "@/lib/hooks/use-checkout-quote";
@@ -182,9 +182,8 @@ export default function TableBillPage({ params }: { params: Promise<{ tableId: s
   if (!walkInBillId && !table) return <p className="p-4 text-sm text-destructive">Meja tidak ditemukan.</p>;
 
   return (
-    <div className="mx-auto flex max-w-5xl flex-col gap-5 p-4 sm:p-6">
+    <Page width="wide">
       <PageHeader
-        icon={LayoutGrid}
         title={table?.name ?? `Order ${bill?.transaction_number ?? ""}`}
         description={table ? (table.area ?? undefined) : "Order tanpa meja"}
         backHref="/tables"
@@ -392,6 +391,6 @@ export default function TableBillPage({ params }: { params: Promise<{ tableId: s
           setOptionsItem(null);
         }}
       />
-    </div>
+    </Page>
   );
 }

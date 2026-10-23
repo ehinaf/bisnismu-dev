@@ -7,8 +7,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PageHeader } from "@/components/ui/page-header";
+import { Page } from "@/components/ui/page";
 import { StatCard } from "@/components/ui/stat-card";
-import { BarChart3, Receipt, TrendingDown, TrendingUp, Wallet } from "lucide-react";
+import { Receipt, TrendingDown, TrendingUp, Wallet } from "lucide-react";
 import { apiClient, ApiError } from "@/lib/api-client";
 import { getUser } from "@/lib/auth";
 import { daysAgoIso, todayIso } from "@/lib/dates";
@@ -89,8 +90,8 @@ export default function ReportsPage() {
   if (!ready) return null;
 
   return (
-    <div className="mx-auto flex max-w-5xl flex-col gap-5 p-4 sm:p-6">
-      <PageHeader icon={BarChart3} title="Laporan" description="Ringkasan penjualan, laba, dan performa" />
+    <Page width="wide">
+      <PageHeader title="Laporan" description="Ringkasan penjualan, laba, dan performa" />
 
       <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
         <div className="flex flex-wrap items-end gap-2">
@@ -239,6 +240,6 @@ export default function ReportsPage() {
           </Card>
         </>
       )}
-    </div>
+    </Page>
   );
 }

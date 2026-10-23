@@ -4,7 +4,8 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
+    /* Latar app sedikit abu (bukan putih) supaya kartu/tabel putih terpisah tanpa bayangan. */
+    --background: 240 5% 97.5%;
     --foreground: 240 10% 4%;
     --card: 0 0% 100%;
     --card-foreground: 240 10% 4%;
@@ -59,6 +60,9 @@
 
   body {
     @apply bg-background text-foreground;
+    /* Aplikasi kasir penuh angka: semua digit selebar sama supaya rupiah, jam, dan
+       kolom tabel tidak "bergoyang" (Plus Jakarta Sans mendukung tnum). */
+    font-variant-numeric: tabular-nums;
   }
 }
 

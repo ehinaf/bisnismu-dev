@@ -9,9 +9,10 @@ import { MoneyInput } from "@/components/ui/money-input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { PageHeader } from "@/components/ui/page-header";
+import { Page } from "@/components/ui/page";
 import { Badge } from "@/components/ui/badge";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { Package, PackageOpen, Plus } from "lucide-react";
+import { PackageOpen, Plus } from "lucide-react";
 import { apiClient, ApiError } from "@/lib/api-client";
 import { getUser } from "@/lib/auth";
 import { formatCurrency } from "@/lib/format";
@@ -238,9 +239,8 @@ export default function CatalogPage() {
   if (!ready) return null;
 
   return (
-    <div className="mx-auto flex max-w-5xl flex-col gap-5 p-4 sm:p-6">
+    <Page width="wide">
       <PageHeader
-        icon={Package}
         title="Kelola Produk"
         description="Katalog barang, jasa, dan stok awal"
         action={
@@ -498,6 +498,6 @@ export default function CatalogPage() {
         onConfirm={handleDeactivate}
         onClose={() => setPendingDeactivate(null)}
       />
-    </div>
+    </Page>
   );
 }

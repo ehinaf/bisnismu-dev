@@ -44,7 +44,7 @@ export function Topbar({ onOpenMenu }: { onOpenMenu: () => void }) {
   const page = found?.prefix === "/tables" && settings && !settings.enable_tables ? { ...found, title: "Hold Order" } : found;
 
   return (
-    <header className="no-print sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-border bg-card/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-card/80">
+    <header className="no-print sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-border bg-card px-4">
       <button
         type="button"
         onClick={onOpenMenu}
@@ -54,12 +54,13 @@ export function Topbar({ onOpenMenu }: { onOpenMenu: () => void }) {
         <Menu className="h-5 w-5" />
       </button>
 
-      <div className="min-w-0 leading-tight">
+      {/* Di desktop judul ada di halaman (PageHeader) — topbar tidak mengulanginya. */}
+      <div className="min-w-0 leading-tight lg:hidden">
         <h1 className="truncate text-sm font-semibold sm:text-base">{page?.title ?? "BisnisMu"}</h1>
         {page?.subtitle && <p className="text-xs text-muted-foreground">{page.subtitle}</p>}
       </div>
 
-      <div className="hidden items-center gap-3 border-l border-border pl-3 sm:flex">
+      <div className="hidden items-center gap-3 border-l border-border pl-3 sm:flex lg:border-l-0 lg:pl-0">
         <DrawerStatusPill />
         <LiveClock />
       </div>

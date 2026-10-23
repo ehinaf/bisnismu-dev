@@ -7,6 +7,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PageHeader } from "@/components/ui/page-header";
+import { Page } from "@/components/ui/page";
 import { Badge, type BadgeProps } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { apiClient, ApiError } from "@/lib/api-client";
@@ -56,8 +57,8 @@ export default function HistoryPage() {
   const netTotal = counted.reduce((sum, r) => sum + Number(r.total), 0);
 
   return (
-    <div className="mx-auto flex max-w-3xl flex-col gap-5 p-4 sm:p-6">
-      <PageHeader icon={History} title="Riwayat Transaksi" description="Penjualan & refund per hari — buka struk untuk cetak ulang, refund, atau membatalkan" />
+    <Page width="wide">
+      <PageHeader title="Riwayat Transaksi" description="Penjualan & refund per hari — buka struk untuk cetak ulang, refund, atau membatalkan" />
 
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="flex flex-col gap-1.5">
@@ -127,6 +128,6 @@ export default function HistoryPage() {
           </CardContent>
         </Card>
       )}
-    </div>
+    </Page>
   );
 }

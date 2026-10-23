@@ -7,9 +7,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { MoneyInput } from "@/components/ui/money-input";
 import { Label } from "@/components/ui/label";
 import { PageHeader } from "@/components/ui/page-header";
+import { Page } from "@/components/ui/page";
 import { Badge, type BadgeProps } from "@/components/ui/badge";
 import { StatCard } from "@/components/ui/stat-card";
-import { User } from "lucide-react";
 import { apiClient, ApiError } from "@/lib/api-client";
 import { getUser } from "@/lib/auth";
 import { formatCurrency } from "@/lib/format";
@@ -117,9 +117,8 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
   if (!customer) return <p className="p-4 text-sm text-destructive">Pelanggan tidak ditemukan.</p>;
 
   return (
-    <div className="mx-auto flex max-w-3xl flex-col gap-5 p-4 sm:p-6">
+    <Page width="narrow">
       <PageHeader
-        icon={User}
         title={customer.name ?? "(tanpa nama)"}
         description={customer.phone ?? undefined}
         backHref="/customers"
@@ -211,6 +210,6 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
           )}
         </CardContent>
       </Card>
-    </div>
+    </Page>
   );
 }

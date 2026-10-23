@@ -19,20 +19,20 @@ export function ShiftPanel({ user }: { user: AuthUser | null }) {
     : null;
 
   return (
-    <div className="border-t border-zinc-800 px-4 py-3">
-      <p className="text-xs text-zinc-400">Kasir Aktif</p>
-      <p className="truncate text-sm font-semibold text-white">{user.name}</p>
+    <div className="border-t border-border px-4 py-3">
+      <p className="text-xs text-muted-foreground">Kasir aktif</p>
+      <p className="truncate text-sm font-semibold text-foreground">{user.name}</p>
 
       <div className="mt-2 flex items-center gap-2 text-xs">
-        <span className={cn("h-2 w-2 shrink-0 rounded-full", isOpen ? "bg-emerald-500" : "bg-zinc-600")} />
-        <span className="truncate text-zinc-400">{isOpen ? `Shift buka sejak ${openedTime}` : "Shift belum dibuka"}</span>
+        <span className={cn("h-2 w-2 shrink-0 rounded-full", isOpen ? "bg-success" : "bg-muted-foreground/40")} />
+        <span className="truncate text-muted-foreground">{isOpen ? `Shift buka sejak ${openedTime}` : "Shift belum dibuka"}</span>
       </div>
 
       {isOpen ? (
         <button
           type="button"
           onClick={() => setDialog("close")}
-          className="mt-3 w-full rounded-lg border border-red-900/60 py-2 text-sm font-medium text-red-400 transition-colors hover:bg-red-950/50"
+          className="mt-3 w-full rounded-lg border border-border py-2 text-sm font-medium text-destructive transition-colors hover:bg-destructive/10"
         >
           Tutup Shift
         </button>
@@ -40,7 +40,7 @@ export function ShiftPanel({ user }: { user: AuthUser | null }) {
         <button
           type="button"
           onClick={() => setDialog("open")}
-          className="mt-3 w-full rounded-lg border border-zinc-700 py-2 text-sm font-medium text-zinc-200 transition-colors hover:bg-zinc-900"
+          className="mt-3 w-full rounded-lg border border-border py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted"
         >
           Buka Shift
         </button>

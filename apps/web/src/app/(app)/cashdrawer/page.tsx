@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { MoneyInput } from "@/components/ui/money-input";
 import { Label } from "@/components/ui/label";
 import { PageHeader } from "@/components/ui/page-header";
+import { Page } from "@/components/ui/page";
 import { Select } from "@/components/ui/select";
 import { CloseShiftDialog, OpenShiftDialog } from "@/components/shell/shift-dialogs";
 import { apiClient, ApiError } from "@/lib/api-client";
@@ -23,8 +24,8 @@ export default function CashdrawerPage() {
   const [dialog, setDialog] = useState<"open" | "close" | null>(null);
 
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 p-4 sm:p-6">
-      <PageHeader icon={Wallet} title="Kas & Laci" description="Kelola sesi laci kas dan catat kas masuk/keluar" />
+    <Page width="narrow">
+      <PageHeader title="Kas & Laci" description="Kelola sesi laci kas dan catat kas masuk/keluar" />
 
       <CurrentSessionCard session={session} onOpen={() => setDialog("open")} onClose={() => setDialog("close")} />
 
@@ -34,7 +35,7 @@ export default function CashdrawerPage() {
 
       <OpenShiftDialog open={dialog === "open"} onClose={() => setDialog(null)} />
       <CloseShiftDialog open={dialog === "close"} onClose={() => setDialog(null)} />
-    </div>
+    </Page>
   );
 }
 

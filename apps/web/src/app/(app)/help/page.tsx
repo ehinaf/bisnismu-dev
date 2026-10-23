@@ -1,11 +1,11 @@
-import { HelpCircle } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
+import { Page } from "@/components/ui/page";
 
 export default function HelpPage() {
   return (
-    <div className="mx-auto flex max-w-2xl flex-col gap-6 p-4 sm:p-6">
-      <PageHeader icon={HelpCircle} title="Bantuan" description="Tips singkat penggunaan kasir" />
+    <Page width="narrow">
+      <PageHeader title="Bantuan" description="Tips singkat penggunaan kasir" />
       <Card>
         <CardHeader>
           <CardTitle>Pintasan keyboard</CardTitle>
@@ -18,6 +18,6 @@ export default function HelpPage() {
           <p>Scan barcode atau ketik nama produk pada kolom pencarian untuk menambah ke keranjang.</p>
         </CardContent>
       </Card>
-    </div>
+    </Page>
   );
 }

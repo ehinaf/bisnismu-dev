@@ -9,6 +9,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/ui/page-header";
+import { Page } from "@/components/ui/page";
 import { StockAdjustDialog } from "@/components/stock/stock-adjust-dialog";
 import { apiClient, ApiError } from "@/lib/api-client";
 import { getUser } from "@/lib/auth";
@@ -74,9 +75,8 @@ export default function StockPage() {
   if (!ready) return null;
 
   return (
-    <div className="mx-auto flex max-w-3xl flex-col gap-5 p-4 sm:p-6">
+    <Page width="wide">
       <PageHeader
-        icon={Boxes}
         title="Stok"
         description={`Stok per outlet${outlet ? ` · ${outlet.name}` : ""} — isi stok awal, catat barang masuk, dan koreksi hasil hitung`}
       />
@@ -180,6 +180,6 @@ export default function StockPage() {
           }}
         />
       )}
-    </div>
+    </Page>
   );
 }

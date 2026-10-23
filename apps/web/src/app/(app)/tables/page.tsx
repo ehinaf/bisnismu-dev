@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PageHeader } from "@/components/ui/page-header";
+import { Page } from "@/components/ui/page";
 import { Badge, type BadgeProps } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ChevronRight, LayoutGrid, Plus, ReceiptText, Users } from "lucide-react";
@@ -116,9 +117,8 @@ export default function TablesPage() {
   }
 
   return (
-    <div className="mx-auto flex max-w-5xl flex-col gap-5 p-4 sm:p-6">
+    <Page width="wide">
       <PageHeader
-        icon={LayoutGrid}
         title={tablesEnabled ? "Meja & Order" : "Hold Order"}
         description={tablesEnabled ? "Denah meja, open bill dine-in, dan order yang ditahan" : "Order yang ditahan di kasir (F8) — lanjutkan, tambah item, atau bayar"}
         action={
@@ -274,6 +274,6 @@ export default function TablesPage() {
             ))}
         </>
       )}
-    </div>
+    </Page>
   );
 }

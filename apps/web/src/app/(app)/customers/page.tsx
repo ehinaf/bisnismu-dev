@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { MoneyInput } from "@/components/ui/money-input";
 import { Label } from "@/components/ui/label";
 import { PageHeader } from "@/components/ui/page-header";
+import { Page } from "@/components/ui/page";
 import { Plus, Users } from "lucide-react";
 import { apiClient, ApiError } from "@/lib/api-client";
 import { getUser } from "@/lib/auth";
@@ -139,9 +140,8 @@ export default function CustomersPage() {
   if (!ready) return null;
 
   return (
-    <div className="mx-auto flex max-w-5xl flex-col gap-5 p-4 sm:p-6">
+    <Page width="wide">
       <PageHeader
-        icon={Users}
         title="Pelanggan"
         description="Data pelanggan, poin loyalti, dan kasbon"
         action={
@@ -272,6 +272,6 @@ export default function CustomersPage() {
         onConfirm={handleDeactivate}
         onClose={() => setPendingDelete(null)}
       />
-    </div>
+    </Page>
   );
 }

@@ -34,7 +34,7 @@ export function MobileSidebar({
           type="button"
           onClick={onClose}
           aria-label="Tutup menu"
-          className="absolute right-2 top-4 z-10 rounded-lg p-2 text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200"
+          className="absolute right-2 top-4 z-10 rounded-lg p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
         >
           <X className="h-5 w-5" />
         </button>
