@@ -29,7 +29,10 @@ export function ReceiptPaper({ receipt, className }: { receipt: PublicReceipt; c
     >
       <header className="flex flex-col items-center gap-0.5 border-b border-dashed border-border pb-3 text-center">
         <h1 className="text-base font-semibold">{receipt.business_name}</h1>
-        <p className="text-xs text-muted-foreground">{receipt.outlet.name}</p>
+        {/* Outlet pertama dinamai sama dengan usaha saat daftar — jangan tampil dua kali. */}
+        {receipt.outlet.name !== receipt.business_name && (
+          <p className="text-xs text-muted-foreground">{receipt.outlet.name}</p>
+        )}
         {receipt.outlet.address && <p className="text-xs text-muted-foreground">{receipt.outlet.address}</p>}
         {receipt.outlet.phone && <p className="text-xs text-muted-foreground">{receipt.outlet.phone}</p>}
         {receipt.receipt_header && <p className="mt-1 whitespace-pre-line text-xs">{receipt.receipt_header}</p>}
