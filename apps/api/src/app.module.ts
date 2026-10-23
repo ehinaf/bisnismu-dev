@@ -21,7 +21,11 @@ import { PublicModule } from "./modules/public/public.module";
     // Batas umum per IP sengaja longgar: satu toko (beberapa tablet di satu Wi-Fi/NAT)
     // berbagi satu IP, dan layar kasir memanggil API terus-menerus (katalog, quote,
     // polling laci). Endpoint login/PIN punya batas ketat sendiri (@Throttle di AuthController).
-    ThrottlerModule.forRoot([{ ttl: 60_000, limit: 600 }]),
+    ThrottlerModule.forRoot({
+      throttlers: [{ ttl: 60_000, limit: 600 }],
+      // Tampil apa adanya di layar (mis. login PIN) — bukan "ThrottlerException: Too Many Requests".
+      errorMessage: "Terlalu banyak percobaan. Tunggu sebentar, lalu coba lagi.",
+    }),
     PrismaModule,
     AuthModule,
     TenantModule,
