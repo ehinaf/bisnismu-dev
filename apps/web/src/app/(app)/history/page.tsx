@@ -10,6 +10,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { Badge, type BadgeProps } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { apiClient, ApiError } from "@/lib/api-client";
+import { todayIso } from "@/lib/dates";
 import { formatCurrency } from "@/lib/format";
 import { useActiveOutlet } from "@/lib/stores/outlet-store";
 import type { TransactionHistoryRow, TransactionStatus } from "@/lib/types";
@@ -29,13 +30,6 @@ const STATUS_VARIANT: Partial<Record<TransactionStatus, BadgeProps["variant"]>> 
   refunded: "warning",
   partially_refunded: "warning",
 };
-
-// Tanggal kalender lokal (YYYY-MM-DD) — toISOString() memberi tanggal UTC.
-function todayIso() {
-  const d = new Date();
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-}
 
 export default function HistoryPage() {
   const outlet = useActiveOutlet();

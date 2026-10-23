@@ -10,7 +10,7 @@ export class UpdateExpenseDto {
   category_id?: string;
 
   @IsOptional()
-  @IsNumber()
+  @IsNumber({ maxDecimalPlaces: 2 })
   @IsPositive()
   amount?: number;
 

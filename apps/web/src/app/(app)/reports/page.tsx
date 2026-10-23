@@ -11,26 +11,10 @@ import { StatCard } from "@/components/ui/stat-card";
 import { BarChart3, Receipt, TrendingDown, TrendingUp, Wallet } from "lucide-react";
 import { apiClient, ApiError } from "@/lib/api-client";
 import { getUser } from "@/lib/auth";
+import { daysAgoIso, todayIso } from "@/lib/dates";
 import { formatCurrency } from "@/lib/format";
 import { useActiveOutlet } from "@/lib/stores/outlet-store";
 import type { DailySalesRow, PaymentMethodRow, ProfitLossSummary, TopItemRow } from "@/lib/types";
-
-// Tanggal kalender LOKAL (YYYY-MM-DD) — toISOString() memberi tanggal UTC, yang di
-// WIB antara 00:00–07:00 masih "kemarin".
-function localIsoDate(d: Date) {
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-}
-
-function todayIso() {
-  return localIsoDate(new Date());
-}
-
-function daysAgoIso(days: number) {
-  const d = new Date();
-  d.setDate(d.getDate() - days);
-  return localIsoDate(d);
-}
 
 export default function ReportsPage() {
   const router = useRouter();

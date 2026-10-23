@@ -399,3 +399,22 @@ export interface StockMovementRow {
   inventory: { item: { name: string }; variant: { name: string } | null };
   creator: { name: string } | null;
 }
+
+export interface ExpenseCategory {
+  id: string;
+  name: string;
+}
+
+// GET /expenses?outlet_id=&from=&to=
+export interface Expense {
+  id: string;
+  outlet_id: string | null;
+  category_id: string | null;
+  /** Decimal string. */
+  amount: string;
+  description: string | null;
+  /** Kolom DATE — "2026-10-23T00:00:00.000Z"; pakai 10 karakter pertama. */
+  expense_date: string;
+  created_at: string;
+  category: { name: string } | null;
+}

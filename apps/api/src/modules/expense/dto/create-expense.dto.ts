@@ -9,7 +9,7 @@ export class CreateExpenseDto {
   @IsUUID()
   category_id?: string;
 
-  @IsNumber()
+  @IsNumber({ maxDecimalPlaces: 2 })
   @IsPositive()
   amount!: number;
 
