@@ -22,12 +22,18 @@ export class ItemService {
             item_modifier_groups: { where: { modifier_group: { deleted_at: null } } },
           },
         },
+        // Scan barcode varian di kasir langsung memasukkan varian itu ke keranjang.
+        variants: {
+          where: { is_active: true, deleted_at: null, barcode: { not: null } },
+          select: { id: true, name: true, barcode: true, price_adjustment: true },
+        },
       },
     });
-    return items.map(({ _count, ...item }) => ({
+    return items.map(({ _count, variants, ...item }) => ({
       ...item,
       variant_count: _count.variants,
       modifier_group_count: _count.item_modifier_groups,
+      variant_barcodes: variants,
     }));
   }
 

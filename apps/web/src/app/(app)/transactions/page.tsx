@@ -100,7 +100,8 @@ export default function TransactionsPage() {
       return (
         i.name.toLowerCase().includes(q) ||
         (i.sku ?? "").toLowerCase().includes(q) ||
-        (i.barcode ?? "").toLowerCase().includes(q)
+        (i.barcode ?? "").toLowerCase().includes(q) ||
+        i.variant_barcodes.some((v) => v.barcode.toLowerCase().includes(q))
       );
     });
   }, [catalogItems, query, activeCategoryId]);
@@ -139,6 +140,23 @@ export default function TransactionsPage() {
   function handleSearchSubmit(): boolean {
     const q = query.trim().toLowerCase();
     if (!q) return true;
+    // Barcode varian → langsung varian itu (kecuali masih ada modifier yang harus dipilih).
+    for (const item of catalogItems) {
+      const variant = item.variant_barcodes.find((v) => v.barcode.toLowerCase() === q);
+      if (!variant) continue;
+      if (item.modifier_group_count > 0 || item.pricing_type === "open") setOptionsItem(item);
+      else {
+        addLine({
+          item_id: item.id,
+          name: item.name,
+          unit_price: Number(item.base_price) + Number(variant.price_adjustment),
+          variant_id: variant.id,
+          variant_name: variant.name,
+        });
+      }
+      setQuery("");
+      return true;
+    }
     const exact = catalogItems.find((i) => i.sku?.toLowerCase() === q || i.barcode?.toLowerCase() === q);
     const match = exact ?? (filtered.length === 1 ? filtered[0] : null);
     if (match) {

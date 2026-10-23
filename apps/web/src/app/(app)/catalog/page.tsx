@@ -16,6 +16,8 @@ import { apiClient, ApiError } from "@/lib/api-client";
 import { getUser } from "@/lib/auth";
 import { formatCurrency } from "@/lib/format";
 import { useActiveOutlet } from "@/lib/stores/outlet-store";
+import { toast } from "@/lib/stores/toast-store";
+import { VariantsSection } from "@/components/catalog/variants-section";
 import type { Category, ItemDetail, ItemType, PricingType, Unit } from "@/lib/types";
 
 const MANAGEMENT_ROLES = ["owner", "admin", "manager"];
@@ -41,6 +43,7 @@ interface FormState {
   category_id: string;
   unit_id: string;
   sku: string;
+  barcode: string;
   base_price: string;
   cost_price: string;
   item_type: ItemType;
@@ -55,6 +58,7 @@ const EMPTY_FORM: FormState = {
   category_id: "",
   unit_id: "",
   sku: "",
+  barcode: "",
   base_price: "",
   cost_price: "",
   item_type: "product",
@@ -129,6 +133,7 @@ export default function CatalogPage() {
       category_id: item.category_id ?? "",
       unit_id: item.unit_id ?? "",
       sku: item.sku ?? "",
+      barcode: item.barcode ?? "",
       base_price: item.base_price,
       cost_price: item.cost_price,
       item_type: item.item_type,
@@ -173,6 +178,7 @@ export default function CatalogPage() {
         category_id: form.category_id || undefined,
         unit_id: form.unit_id || undefined,
         sku: form.sku.trim() || undefined,
+        barcode: form.barcode.trim() || undefined,
         base_price: Number(form.base_price),
         cost_price: form.cost_price ? Number(form.cost_price) : undefined,
         item_type: form.item_type,
@@ -183,6 +189,8 @@ export default function CatalogPage() {
       let item: ItemDetail;
       if (form.id) {
         item = await apiClient.patch<ItemDetail>(`/catalog/items/${form.id}`, payload);
+        toast.success(`${item.name} disimpan.`);
+        setFormOpen(false);
       } else {
         item = await apiClient.post<ItemDetail>("/catalog/items", payload);
         const initialStock = Number(form.initial_stock);
@@ -194,9 +202,11 @@ export default function CatalogPage() {
             reason: "Stok awal saat produk dibuat",
           });
         }
+        // Form tetap terbuka dalam mode ubah supaya varian bisa langsung ditambahkan.
+        setForm((f) => ({ ...f, id: item.id, initial_stock: "0" }));
+        toast.success(`${item.name} dibuat. Tambahkan varian bila ada ukuran/rasa, atau tutup form.`);
       }
 
-      setFormOpen(false);
       await loadAll();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Gagal menyimpan produk.");
@@ -253,9 +263,21 @@ export default function CatalogPage() {
                 <Label htmlFor="name">Nama Produk</Label>
                 <Input id="name" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
               </div>
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="sku">SKU</Label>
-                <Input id="sku" value={form.sku} onChange={(e) => setForm((f) => ({ ...f, sku: e.target.value }))} />
+              <div className="grid grid-cols-2 gap-3">
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="sku">SKU</Label>
+                  <Input id="sku" value={form.sku} onChange={(e) => setForm((f) => ({ ...f, sku: e.target.value }))} />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="barcode">Barcode</Label>
+                  <Input
+                    id="barcode"
+                    maxLength={60}
+                    placeholder="Scan / ketik"
+                    value={form.barcode}
+                    onChange={(e) => setForm((f) => ({ ...f, barcode: e.target.value }))}
+                  />
+                </div>
               </div>
 
               <div className="flex flex-col gap-1.5">
@@ -388,12 +410,16 @@ export default function CatalogPage() {
               )}
             </div>
 
+            {form.id && (
+              <VariantsSection itemId={form.id} basePrice={Number(form.base_price) || 0} trackStock={form.track_stock} />
+            )}
+
             <div className="flex gap-2">
               <Button disabled={saving} onClick={handleSubmit}>
                 {saving ? "Menyimpan..." : "Simpan"}
               </Button>
               <Button variant="outline" onClick={() => setFormOpen(false)}>
-                Batal
+                {form.id ? "Tutup" : "Batal"}
               </Button>
             </div>
           </CardContent>

@@ -17,12 +17,13 @@ export class UpdateVariantDto {
   @MaxLength(60)
   barcode?: string;
 
+  /** Selisih dari harga dasar item (boleh negatif, mis. ukuran kecil lebih murah). */
   @IsOptional()
-  @IsNumber()
+  @IsNumber({ maxDecimalPlaces: 2 })
   price_adjustment?: number;
 
   @IsOptional()
-  @IsNumber()
+  @IsNumber({ maxDecimalPlaces: 2 })
   cost_adjustment?: number;
 
   @IsOptional()

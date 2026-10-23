@@ -17,6 +17,21 @@ export interface CatalogItem {
   // >0 → kasir harus memilih opsi lewat pemilih item sebelum masuk keranjang.
   variant_count: number;
   modifier_group_count: number;
+  /** Varian aktif yang punya barcode — scan langsung memasukkan varian itu. */
+  variant_barcodes: Array<{ id: string; name: string; barcode: string; price_adjustment: string }>;
+}
+
+// GET /catalog/items/:id/variants — pengelolaan varian di halaman Produk.
+export interface ItemVariant {
+  id: string;
+  item_id: string;
+  name: string;
+  sku_suffix: string | null;
+  barcode: string | null;
+  /** Selisih dari harga dasar item (Decimal string, boleh negatif). */
+  price_adjustment: string;
+  cost_adjustment: string;
+  is_active: boolean;
 }
 
 // GET /catalog/items/:id/pos-options — pilihan untuk pemilih item di kasir.

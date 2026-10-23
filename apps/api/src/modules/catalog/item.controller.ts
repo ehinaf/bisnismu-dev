@@ -81,8 +81,9 @@ export class ItemController {
     @Param("id") id: string,
     @Param("variantId") variantId: string,
     @Body() dto: UpdateVariantDto,
+    @Ip() ip: string,
   ) {
-    return this.variantService.update(user.business_id, id, variantId, dto);
+    return this.variantService.update(user.business_id, id, variantId, dto, { userId: user.sub, ip });
   }
 
   @UseGuards(RolesGuard)
