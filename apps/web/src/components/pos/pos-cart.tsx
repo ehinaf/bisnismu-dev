@@ -23,7 +23,7 @@ export function PosCart() {
   }, [items.length]);
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col border-b border-border">
+    <div className="flex flex-1 flex-col border-b border-border">
       <header className="flex items-center justify-between px-4 py-3">
         <div className="flex items-center gap-2">
           <ShoppingCart className="h-4 w-4" />
@@ -68,10 +68,10 @@ export function PosCart() {
           <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted">
             <ShoppingBag className="h-6 w-6 text-muted-foreground/60" />
           </div>
-          <p className="text-sm text-muted-foreground">Keranjang masih kosong. Ketuk produk untuk menambahkan.</p>
+          <p className="text-sm text-muted-foreground">Ketuk produk atau scan barcode untuk mulai.</p>
         </div>
       ) : (
-        <div className="min-h-0 flex-1 divide-y divide-border overflow-y-auto px-4">
+        <div className="min-h-0 flex-1 divide-y divide-border overflow-y-auto px-4 lg:max-h-[38vh]">
           {items.map((item) => (
             <CartItemRow
               key={item.line_key}
@@ -84,15 +84,18 @@ export function PosCart() {
         </div>
       )}
 
-      <div className="px-4 py-3">
-        <textarea
-          rows={2}
-          value={orderNotes}
-          onChange={(e) => setOrderNotes(e.target.value)}
-          placeholder="Catatan Order — mis. tanpa es, bungkus terpisah..."
-          className="w-full resize-none rounded-lg border border-input bg-background px-3 py-2 text-xs outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
-        />
-      </div>
+      {items.length > 0 && (
+        <div className="px-4 py-3">
+          <textarea
+            rows={2}
+            value={orderNotes}
+            onChange={(e) => setOrderNotes(e.target.value)}
+            placeholder="Catatan order (opsional) — mis. tanpa es"
+            aria-label="Catatan order"
+            className="w-full resize-none rounded-lg border border-input bg-background px-3 py-2 text-xs outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
+          />
+        </div>
+      )}
     </div>
   );
 }

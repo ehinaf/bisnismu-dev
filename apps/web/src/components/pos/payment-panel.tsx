@@ -13,15 +13,6 @@ import { previewRounding, previewTaxes } from "@/lib/pos-pricing";
 import { useCartStore } from "@/lib/stores/cart-store";
 import type { CheckoutQuote, PaymentChannel, RoundingMode, Tax } from "@/lib/types";
 
-const CHANNEL_COLORS: Record<string, string> = {
-  cash: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400",
-  qris: "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-400",
-  e_wallet: "bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-400",
-  bank_transfer: "bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-400",
-  debit: "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300",
-  credit: "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300",
-};
-
 export function PaymentPanel({
   subtotal,
   taxes,
@@ -35,6 +26,7 @@ export function PaymentPanel({
   onSubmit,
   submitting,
   error,
+  section,
 }: {
   subtotal: number;
   taxes: Tax[];
@@ -48,6 +40,11 @@ export function PaymentPanel({
   onSubmit: (action: "save" | "print" | "wa") => void;
   submitting: boolean;
   error: string | null;
+  /**
+   * Alur dua langkah ala Square: "summary" = rincian & total di kolom keranjang;
+   * "payment" = panel Bayar (metode, uang pas, kembalian, Simpan).
+   */
+  section: "summary" | "payment";
 }) {
   const customer = useCartStore((s) => s.customer);
   const voucherCode = useCartStore((s) => s.voucherCode);
@@ -56,6 +53,7 @@ export function PaymentPanel({
   const addKasbon = useCartStore((s) => s.addKasbon);
   const updatePaymentAmount = useCartStore((s) => s.updatePaymentAmount);
   const removePayment = useCartStore((s) => s.removePayment);
+  const hasItems = useCartStore((s) => s.items.length > 0);
 
   const [pickerOpen, setPickerOpen] = useState(false);
 
@@ -113,18 +111,32 @@ export function PaymentPanel({
     setPickerOpen(false);
   }
 
-  return (
-    <div className="flex flex-col gap-4 p-4">
-      <div className="rounded-xl bg-success/10 px-4 py-3">
-        <div className="flex items-center justify-between">
-          <span className="text-sm font-medium text-success">Total Akhir</span>
-          <span className="text-xl font-bold tabular-nums text-success">
-            {formatCurrency(totalFinal)}
-          </span>
-        </div>
-      </div>
+  // Keranjang kosong: panel tenang — tidak ada deretan angka nol & tombol nonaktif.
+  if (!hasItems && payments.length === 0) return null;
 
-      <div className="flex flex-col gap-1.5 text-sm">
+  // Selalu terlihat di dasar panel Bayar yang menggulung.
+  const actions = (
+    <div className="flex flex-col gap-2">
+      {blockingError && <p className="rounded-lg bg-warning/10 px-3 py-2 text-sm text-warning">{blockingError}</p>}
+      {error && <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>}
+      <Button size="lg" disabled={!canSubmit} onClick={() => onSubmit("save")}>
+        {submitting ? "Memproses..." : "Simpan Transaksi"}
+        {!submitting && <span className="ml-1 text-xs opacity-70">F9</span>}
+      </Button>
+      <div className="flex gap-2">
+        <Button variant="outline" className="flex-1" disabled={!canSubmit} onClick={() => onSubmit("print")}>
+          Simpan &amp; Cetak
+        </Button>
+        <Button variant="outline" className="flex-1" disabled={!canSubmit} onClick={() => onSubmit("wa")}>
+          Simpan &amp; WA
+        </Button>
+      </div>
+    </div>
+  );
+
+  if (section === "summary") {
+    return (
+      <div className="flex flex-col gap-1.5 p-4 text-sm">
         <div className="flex justify-between">
           <span className="text-muted-foreground">Subtotal</span>
           <span className="tabular-nums">{formatCurrency(subtotal)}</span>
@@ -152,22 +164,25 @@ export function PaymentPanel({
           <span className="text-muted-foreground">Pajak</span>
           <span className="tabular-nums">{formatCurrency(taxDisplay)}</span>
         </div>
-        <div className="flex justify-between border-t border-border pt-1.5 text-base font-semibold">
-          <span>Total</span>
-          <span className="tabular-nums">{formatCurrency(totalFinal)}</span>
+        <div className="mt-1 flex items-baseline justify-between border-t border-border pt-3">
+          <span className="text-base font-semibold">Total</span>
+          <span className="text-2xl font-bold tracking-tight">{formatCurrency(totalFinal)}</span>
         </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-4 p-4">
+      <div className="flex items-baseline justify-between rounded-lg bg-muted px-4 py-3">
+        <span className="text-sm font-medium text-muted-foreground">Total bayar</span>
+        <span className="text-3xl font-bold tracking-tight">{formatCurrency(totalFinal)}</span>
       </div>
 
       <div className="flex flex-col gap-2">
         <div className="flex items-center justify-between">
           <p className="text-sm font-medium">Metode Pembayaran</p>
         </div>
-
-        {payments.length === 0 && subtotal === 0 && (
-          <p className="rounded-lg border border-dashed border-border px-3 py-4 text-center text-xs text-muted-foreground">
-            Tambahkan produk ke keranjang dulu.
-          </p>
-        )}
 
         {payments.map((p) => {
           const Icon = CHANNEL_ICONS[p.channel_type] ?? Wallet;
@@ -178,7 +193,7 @@ export function PaymentPanel({
                   "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg",
                   p.is_receivable
                     ? "bg-warning/10 text-warning"
-                    : (CHANNEL_COLORS[p.channel_type] ?? "bg-muted text-muted-foreground"),
+                    : "bg-muted text-foreground",
                 )}
               >
                 <Icon className="h-4 w-4" />
@@ -315,43 +330,22 @@ export function PaymentPanel({
         )}
       </div>
 
-      <div className="flex flex-col gap-1.5 border-t border-border pt-3 text-sm">
-        <div className="flex justify-between">
-          <span className="text-muted-foreground">Total Dibayar</span>
-          <span className="font-semibold tabular-nums">{formatCurrency(totalDibayar)}</span>
+      {payments.length > 0 && (
+        <div className="flex flex-col gap-1.5 border-t border-border pt-3 text-sm">
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Total Dibayar</span>
+            <span className="font-semibold tabular-nums">{formatCurrency(totalDibayar)}</span>
+          </div>
+          <div className="flex min-h-7 items-center justify-between">
+            <span className="text-muted-foreground">Kembalian</span>
+            <span className={cn("font-semibold tabular-nums", kembalian > 0 && "text-xl font-bold text-success")}>
+              {formatCurrency(kembalian)}
+            </span>
+          </div>
         </div>
-        <div className="flex min-h-7 items-center justify-between">
-          <span className="text-muted-foreground">Kembalian</span>
-          <span
-            className={cn(
-              "font-semibold tabular-nums",
-              kembalian > 0 && "text-xl font-bold text-success",
-            )}
-          >
-            {formatCurrency(kembalian)}
-          </span>
-        </div>
-      </div>
-
-      {blockingError && (
-        <p className="rounded-lg bg-warning/10 px-3 py-2 text-sm text-warning">
-          {blockingError}
-        </p>
       )}
-      {error && <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>}
 
-      <Button size="lg" disabled={!canSubmit} onClick={() => onSubmit("save")}>
-        {submitting ? "Memproses..." : "Simpan Transaksi"}
-        {!submitting && <span className="ml-1 text-xs opacity-70">F9</span>}
-      </Button>
-      <div className="flex gap-2">
-        <Button variant="outline" className="flex-1" disabled={!canSubmit} onClick={() => onSubmit("print")}>
-          Simpan &amp; Cetak
-        </Button>
-        <Button variant="outline" className="flex-1" disabled={!canSubmit} onClick={() => onSubmit("wa")}>
-          Simpan &amp; WA
-        </Button>
-      </div>
+      <div className="sticky bottom-0 -mx-4 -mb-4 border-t border-border bg-card p-4">{actions}</div>
     </div>
   );
 }

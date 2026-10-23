@@ -2,11 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, ShoppingCart } from "lucide-react";
+import { PauseCircle, ShoppingCart, Wallet } from "lucide-react";
 import { ProductGrid } from "@/components/product-grid";
 import { Modal } from "@/components/ui/modal";
+import { Kbd } from "@/components/ui/kbd";
 import { PosToolbar } from "@/components/pos/pos-toolbar";
-import { CategoryChips, CategorySidebar } from "@/components/pos/category-sidebar";
+import { CategoryChips } from "@/components/pos/category-chips";
+import { OpenShiftDialog } from "@/components/shell/shift-dialogs";
 import { PosCart } from "@/components/pos/pos-cart";
 import { PaymentPanel } from "@/components/pos/payment-panel";
 import { PosActionBar } from "@/components/pos/pos-action-bar";
@@ -63,6 +65,9 @@ export default function TransactionsPage() {
 
   const [customerModalOpen, setCustomerModalOpen] = useState(false);
   const [tableModalOpen, setTableModalOpen] = useState(false);
+  const [shiftDialogOpen, setShiftDialogOpen] = useState(false);
+  // Alur dua langkah ala Square: keranjang → panel Bayar (metode, kembalian, Simpan).
+  const [payOpen, setPayOpen] = useState(false);
   const [voucherModalOpen, setVoucherModalOpen] = useState(false);
   const [mobileCartOpen, setMobileCartOpen] = useState(false);
   const [optionsItem, setOptionsItem] = useState<CatalogItem | null>(null);
@@ -258,8 +263,30 @@ export default function TransactionsPage() {
     onVoucher: () => setVoucherModalOpen(true),
     onTax: () => setTaxPopoverOpen((v) => !v),
     onHoldOrder: handleHoldOrder,
-    onSubmit: () => void handleSubmit("save"),
+    // F9: buka panel Bayar; di dalam panel Bayar, F9 menyimpan transaksi.
+    onSubmit: () => {
+      if (payOpen) void handleSubmit("save");
+      else if (items.length > 0) setPayOpen(true);
+    },
   });
+
+  const paymentProps = {
+    subtotal,
+    taxes,
+    rounding: settings?.rounding ?? "none",
+    quote,
+    quoteLoading,
+    quoteError,
+    channels,
+    kasbonEnabled: !!settings?.enable_kasbon,
+    onOpenVoucher: () => setVoucherModalOpen(true),
+    onSubmit: handleSubmit,
+    submitting,
+    error: submitError,
+  } as const;
+  const totalForButton = quote ? Number(quote.total) : subtotal;
+  // Sama dengan judul "Keranjang (n)": jumlah barang, bukan jumlah baris.
+  const itemCount = items.reduce((n, i) => n + i.quantity, 0);
 
   if (loadError) {
     return <p className="p-4 text-sm text-destructive">{loadError}</p>;
@@ -267,11 +294,20 @@ export default function TransactionsPage() {
 
   return (
     // pb-20 menyisakan ruang untuk bar "Bayar" yang menempel di bawah layar ponsel.
-    <div className="flex flex-1 flex-col pb-20 lg:pb-0">
+    // Desktop: tinggi layar dikunci (di bawah topbar 3.5rem) supaya grid produk dan
+    // keranjang menggulung sendiri-sendiri — grid tidak hilang saat keranjang panjang.
+    <div className="flex flex-1 flex-col pb-20 lg:h-[calc(100dvh-3.5rem)] lg:flex-none lg:overflow-hidden lg:pb-0">
       {!drawerSession && (
-        <div className="no-print flex items-center gap-2 bg-warning/10 px-4 py-2 text-xs text-warning">
-          <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-          Laci belum dibuka — transaksi tetap bisa disimpan, tapi buka shift dari sidebar untuk pelacakan kas yang akurat.
+        <div className="no-print flex items-center gap-3 border-b border-warning/20 bg-warning/10 px-4 py-2 text-sm text-warning">
+          <Wallet className="h-4 w-4 shrink-0" />
+          <span className="flex-1">Laci belum dibuka — uang tunai belum tercatat ke laci.</span>
+          <button
+            type="button"
+            onClick={() => setShiftDialogOpen(true)}
+            className="shrink-0 rounded-md border border-warning/40 px-3 py-1 text-sm font-medium hover:bg-warning/10"
+          >
+            Buka Shift
+          </button>
         </div>
       )}
 
@@ -285,10 +321,8 @@ export default function TransactionsPage() {
 
       <CategoryChips categories={categories} activeCategoryId={activeCategoryId} onSelect={setActiveCategoryId} />
 
-      <div className="flex flex-1">
-        <CategorySidebar categories={categories} activeCategoryId={activeCategoryId} onSelect={setActiveCategoryId} />
-
-        <div className="min-w-0 flex-1 p-4">
+      <div className="flex min-h-0 flex-1">
+        <div className="min-w-0 flex-1 px-4 pb-4 pt-3 lg:overflow-y-auto">
           <ProductGrid items={visibleItems} onAdd={handleAdd} loading={loading} />
           {!loading && visibleCount < filtered.length && (
             <button
@@ -301,24 +335,14 @@ export default function TransactionsPage() {
           )}
         </div>
 
-        {/* Kolom kanan — desktop */}
-        <div className="hidden w-[380px] shrink-0 flex-col border-l border-border bg-card lg:flex">
+        {/* Kolom kanan — desktop: keranjang + ringkasan, tombol Bayar selalu di dasar */}
+        <div className="hidden w-[340px] shrink-0 flex-col border-l border-border bg-card lg:flex xl:w-[380px]">
           <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
             <PosCart />
-            <PaymentPanel
-              subtotal={subtotal}
-              taxes={taxes}
-              rounding={settings?.rounding ?? "none"}
-              quote={quote}
-              quoteLoading={quoteLoading}
-              quoteError={quoteError}
-              channels={channels}
-              kasbonEnabled={!!settings?.enable_kasbon}
-              onOpenVoucher={() => setVoucherModalOpen(true)}
-              onSubmit={handleSubmit}
-              submitting={submitting}
-              error={submitError}
-            />
+            <PaymentPanel section="summary" {...paymentProps} />
+          </div>
+          <div className="shrink-0 border-t border-border p-4">
+            <PayButton total={totalForButton} disabled={!canTransact} onClick={() => setPayOpen(true)} />
           </div>
         </div>
       </div>
@@ -333,7 +357,7 @@ export default function TransactionsPage() {
       />
 
       {/* Tombol Bayar — mobile */}
-      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-card/95 p-3 backdrop-blur lg:hidden">
+      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-card p-3 lg:hidden">
         <button
           type="button"
           disabled={!canTransact}
@@ -342,9 +366,9 @@ export default function TransactionsPage() {
         >
           <span className="flex items-center gap-2">
             <ShoppingCart className="h-4 w-4" />
-            {items.length > 0 ? `${items.length} item` : "Keranjang kosong"}
+            {itemCount > 0 ? `${itemCount} barang` : "Keranjang kosong"}
           </span>
-          <span className="tabular-nums">{formatCurrency(quote ? Number(quote.total) : subtotal)}</span>
+          <span className="tabular-nums">{formatCurrency(totalForButton)}</span>
         </button>
       </div>
 
@@ -352,26 +376,44 @@ export default function TransactionsPage() {
       <Modal
         open={mobileCartOpen}
         onClose={() => setMobileCartOpen(false)}
-        title="Keranjang & Pembayaran"
+        title="Keranjang"
         className="max-h-[92dvh]"
         bodyClassName="p-0"
       >
         <PosCart />
-        <PaymentPanel
-          subtotal={subtotal}
-          taxes={taxes}
-          rounding={settings?.rounding ?? "none"}
-          quote={quote}
-          quoteLoading={quoteLoading}
-          quoteError={quoteError}
-          channels={channels}
-          kasbonEnabled={!!settings?.enable_kasbon}
-          onOpenVoucher={() => setVoucherModalOpen(true)}
-          onSubmit={handleSubmit}
-          submitting={submitting}
-          error={submitError}
-        />
+        <PaymentPanel section="summary" {...paymentProps} />
+        <div className="px-4 pb-2">
+          <PayButton
+            total={totalForButton}
+            disabled={!canTransact}
+            onClick={() => {
+              setMobileCartOpen(false);
+              setPayOpen(true);
+            }}
+          />
+        </div>
+        {/* Ponsel: bar aksi bawah disembunyikan — Hold Order dipindah ke sini (voucher ada di panel bayar). */}
+        {items.length > 0 && (
+          <div className="border-t border-border p-4">
+            <button
+              type="button"
+              disabled={holding}
+              onClick={() => {
+                setMobileCartOpen(false);
+                void handleHoldOrder();
+              }}
+              className="flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-border text-sm font-medium hover:bg-muted disabled:opacity-50"
+            >
+              <PauseCircle className="h-4 w-4" />
+              {holding ? "Menahan..." : "Hold Order"}
+            </button>
+          </div>
+        )}
       </Modal>
+      <Modal open={payOpen} onClose={() => setPayOpen(false)} title="Pembayaran" className="sm:max-w-lg" bodyClassName="p-0">
+        <PaymentPanel section="payment" {...paymentProps} />
+      </Modal>
+      <OpenShiftDialog open={shiftDialogOpen} onClose={() => setShiftDialogOpen(false)} />
 
       <CustomerPickerModal open={customerModalOpen} onClose={() => setCustomerModalOpen(false)} />
       <TablePickerModal open={tableModalOpen} onClose={() => setTableModalOpen(false)} />
@@ -385,5 +427,23 @@ export default function TransactionsPage() {
         }}
       />
     </div>
+  );
+}
+
+// Tombol utama kolom keranjang (ala "Charge" Square): total selalu terlihat.
+function PayButton({ total, disabled, onClick }: { total: number; disabled: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      className="flex h-14 w-full items-center justify-between rounded-lg bg-primary px-5 text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
+    >
+      <span className="flex items-center gap-2 text-base font-semibold">
+        Bayar
+        <Kbd className="border-primary-foreground/30 bg-primary-foreground/10 text-primary-foreground">F9</Kbd>
+      </span>
+      <span className="text-xl font-bold">{formatCurrency(total)}</span>
+    </button>
   );
 }

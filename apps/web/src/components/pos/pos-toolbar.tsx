@@ -1,7 +1,7 @@
 "use client";
 
-import { useRef, useState } from "react";
-import { Barcode, Search, StickyNote, User, Users } from "lucide-react";
+import { useRef } from "react";
+import { Barcode, Search, User, Users } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { useCartStore } from "@/lib/stores/cart-store";
@@ -22,13 +22,11 @@ export function PosToolbar({
 }) {
   const customer = useCartStore((s) => s.customer);
   const table = useCartStore((s) => s.table);
-  const orderNotes = useCartStore((s) => s.orderNotes);
   const searchRef = useRef<HTMLInputElement>(null);
-  const [notesOpen, setNotesOpen] = useState(false);
 
   return (
-    <div className="sticky top-14 z-20 flex flex-wrap items-center gap-2 border-b border-border bg-background/95 px-4 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-      <div className="relative min-w-[240px] flex-1">
+    <div className="sticky top-14 z-20 flex items-center gap-2 border-b border-border bg-card px-4 py-3 lg:static">
+      <div className="relative min-w-0 flex-1">
         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <Input
           ref={searchRef}
@@ -51,52 +49,6 @@ export function PosToolbar({
       {onOpenTable && (
         <ToolbarButton icon={Users} label="Meja / Order" active={!!table} activeLabel={table?.name} onClick={onOpenTable} />
       )}
-
-      <div className="relative">
-        <ToolbarButton
-          icon={StickyNote}
-          label="Catatan"
-          active={!!orderNotes.trim()}
-          onClick={() => setNotesOpen((v) => !v)}
-        />
-        {notesOpen && (
-          <>
-            <div className="fixed inset-0 z-40" onClick={() => setNotesOpen(false)} />
-            <div className="absolute right-0 top-full z-50 mt-2 w-72 rounded-lg border border-border bg-card p-3 shadow-lg">
-              <NotesTextarea onDone={() => setNotesOpen(false)} />
-            </div>
-          </>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function NotesTextarea({ onDone }: { onDone: () => void }) {
-  const orderNotes = useCartStore((s) => s.orderNotes);
-  const setOrderNotes = useCartStore((s) => s.setOrderNotes);
-
-  return (
-    <div className="flex flex-col gap-2">
-      <label htmlFor="order-notes" className="text-xs font-medium text-muted-foreground">
-        Catatan untuk pesanan ini
-      </label>
-      <textarea
-        id="order-notes"
-        rows={3}
-        autoFocus
-        value={orderNotes}
-        onChange={(e) => setOrderNotes(e.target.value)}
-        placeholder="Mis. tidak pedas, tanpa es..."
-        className="w-full resize-none rounded-lg border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      />
-      <button
-        type="button"
-        onClick={onDone}
-        className="self-end rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:opacity-90"
-      >
-        Selesai
-      </button>
     </div>
   );
 }
@@ -118,13 +70,15 @@ function ToolbarButton({
     <button
       type="button"
       onClick={onClick}
+      title={label}
       className={cn(
-        "flex h-10 items-center gap-2 whitespace-nowrap rounded-lg border px-3 text-sm font-medium transition-colors",
-        active ? "border-primary/40 bg-primary/10 text-primary" : "border-border hover:bg-accent",
+        "flex h-10 shrink-0 items-center gap-2 whitespace-nowrap rounded-lg border px-3 text-sm font-medium transition-colors",
+        active ? "border-primary/40 bg-primary/10 text-primary" : "border-border bg-card hover:bg-muted",
       )}
     >
       <Icon className="h-4 w-4" />
-      <span className="max-w-[8rem] truncate">{active && activeLabel ? activeLabel : label}</span>
+      {/* Ponsel: ikon saja; nama tetap terbaca pembaca layar. */}
+      <span className="sr-only max-w-[8rem] truncate sm:not-sr-only">{active && activeLabel ? activeLabel : label}</span>
     </button>
   );
 }

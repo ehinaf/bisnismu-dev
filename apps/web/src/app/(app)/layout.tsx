@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { getToken } from "@/lib/auth";
 import { apiClient } from "@/lib/api-client";
 import { useOutletStore } from "@/lib/stores/outlet-store";
@@ -11,10 +11,13 @@ import { useSettingsStore } from "@/lib/stores/settings-store";
 import { Sidebar } from "@/components/shell/sidebar";
 import { Topbar } from "@/components/shell/topbar";
 import { MobileSidebar } from "@/components/shell/mobile-sidebar";
+import { cn } from "@/lib/utils";
 import type { Outlet } from "@/lib/types";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
+  // Layar kasir memakai sidebar rail ikon — grid produk butuh lebar di tablet.
+  const compactNav = usePathname() === "/transactions";
   const [ready, setReady] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const setOutlets = useOutletStore((s) => s.setOutlets);
@@ -41,8 +44,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   if (!ready) return null;
 
   return (
-    <div className="min-h-screen lg:pl-[210px] print:pl-0">
-      <Sidebar openOrdersCount={openOrdersCount} lowStockCount={lowStockCount} />
+    <div className={cn("min-h-screen print:pl-0", compactNav ? "lg:pl-16" : "lg:pl-[210px]")}>
+      <Sidebar openOrdersCount={openOrdersCount} lowStockCount={lowStockCount} compact={compactNav} />
       <MobileSidebar
         open={menuOpen}
         onClose={() => setMenuOpen(false)}

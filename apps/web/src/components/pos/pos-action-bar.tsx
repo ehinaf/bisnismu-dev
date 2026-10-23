@@ -25,8 +25,8 @@ function ActionButton({
       disabled={disabled}
       onClick={onClick}
       className={cn(
-        "flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm font-medium transition-colors",
-        disabled ? "cursor-not-allowed opacity-40" : "hover:bg-accent",
+        "flex h-10 items-center gap-2 rounded-lg border border-border px-3 text-sm font-medium transition-colors",
+        disabled ? "cursor-not-allowed opacity-40" : "hover:bg-muted",
       )}
     >
       <Icon className="h-4 w-4" />
@@ -53,7 +53,7 @@ export function PosActionBar({
   holding: boolean;
 }) {
   return (
-    <div className="no-print flex flex-wrap items-center gap-2 border-t border-border bg-card px-4 py-3">
+    <div className="no-print hidden flex-wrap items-center gap-2 border-t border-border bg-card px-4 py-2.5 lg:flex">
       <ActionButton icon={Ticket} label="Voucher" shortcut="F5" onClick={onOpenVoucher} />
 
       <div className="relative">
@@ -95,7 +95,7 @@ export function PosActionBar({
       />
 
       <p className="ml-auto hidden text-xs text-muted-foreground sm:block">
-        Tip: scan barcode atau ketik nama produk lalu tekan Enter untuk menambah ke keranjang.
+        Scan barcode atau ketik nama lalu Enter untuk menambah.
       </p>
     </div>
   );

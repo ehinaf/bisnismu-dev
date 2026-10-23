@@ -69,10 +69,22 @@ export function isNavActive(pathname: string, href: string): boolean {
   return path === "/transactions" ? pathname === path : pathname.startsWith(path);
 }
 
-export function Sidebar({ openOrdersCount, lowStockCount }: { openOrdersCount?: number; lowStockCount?: number }) {
+/**
+ * `compact` = rail ikon 64px — dipakai di layar kasir supaya grid produk dapat
+ * ruang lebih di tablet (Square: layar jualan tanpa menu lebar).
+ */
+export function Sidebar({
+  openOrdersCount,
+  lowStockCount,
+  compact = false,
+}: {
+  openOrdersCount?: number;
+  lowStockCount?: number;
+  compact?: boolean;
+}) {
   return (
-    <aside className="no-print fixed inset-y-0 left-0 z-40 hidden w-[210px] lg:block">
-      <SidebarContent openOrdersCount={openOrdersCount} lowStockCount={lowStockCount} />
+    <aside className={cn("no-print fixed inset-y-0 left-0 z-40 hidden lg:block", compact ? "w-16" : "w-[210px]")}>
+      <SidebarContent openOrdersCount={openOrdersCount} lowStockCount={lowStockCount} compact={compact} />
     </aside>
   );
 }
@@ -81,10 +93,12 @@ export function SidebarContent({
   openOrdersCount,
   lowStockCount,
   onNavigate,
+  compact = false,
 }: {
   openOrdersCount?: number;
   lowStockCount?: number;
   onNavigate?: () => void;
+  compact?: boolean;
 }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -104,26 +118,66 @@ export function SidebarContent({
   return (
     <div className="flex h-full flex-col overflow-y-auto border-r border-border bg-card text-muted-foreground">
       {/* Logo + outlet */}
-      <div className="flex items-center gap-2.5 px-4 py-4">
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary text-sm font-bold text-primary-foreground">
+      <div className={cn("flex items-center gap-2.5 py-4", compact ? "justify-center px-0" : "px-4")}>
+        <span
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary text-sm font-bold text-primary-foreground"
+          title={compact ? "BisnisMu" : undefined}
+        >
           B
         </span>
-        <div className="min-w-0 leading-tight">
-          <p className="truncate text-sm font-semibold text-foreground">BisnisMu</p>
-          <OutletSwitcher />
-        </div>
+        {!compact && (
+          <div className="min-w-0 leading-tight">
+            <p className="truncate text-sm font-semibold text-foreground">BisnisMu</p>
+            <OutletSwitcher />
+          </div>
+        )}
       </div>
 
       {/* Navigasi */}
-      <nav className="flex flex-col gap-0.5 px-2.5">
+      <nav className={cn("flex flex-col gap-0.5", compact ? "items-center px-2" : "px-2.5")}>
         {items.map((item) => {
           const active = isNavActive(pathname, item.href);
           const Icon = item.icon;
+          const badge =
+            item.badge === "low-stock" && settings?.low_stock_alert
+              ? lowStockCount
+              : item.badge === "open-orders"
+                ? openOrdersCount
+                : 0;
+          if (compact) {
+            return (
+              <Link
+                key={item.label}
+                href={item.href}
+                onClick={onNavigate}
+                aria-label={badge ? `${item.label} (${badge})` : item.label}
+                aria-current={active ? "page" : undefined}
+                title={item.label}
+                className={cn(
+                  "relative flex h-11 w-11 items-center justify-center rounded-lg transition-colors",
+                  active ? "bg-primary/10 text-primary" : "hover:bg-muted hover:text-foreground",
+                )}
+              >
+                <Icon className="h-5 w-5" />
+                {!!badge && (
+                  <span
+                    className={cn(
+                      "absolute right-1 top-1 flex h-4 min-w-[1rem] items-center justify-center rounded-full px-1 text-[10px] font-semibold",
+                      item.badge === "low-stock" ? "bg-warning text-background" : "bg-primary text-primary-foreground",
+                    )}
+                  >
+                    {badge}
+                  </span>
+                )}
+              </Link>
+            );
+          }
           return (
             <Link
               key={item.label}
               href={item.href}
               onClick={onNavigate}
+              aria-current={active ? "page" : undefined}
               className={cn(
                 "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
                 active ? "bg-primary/10 text-primary" : "hover:bg-muted hover:text-foreground",
@@ -152,30 +206,52 @@ export function SidebarContent({
       <div className="flex-1" />
 
       {/* Kasir aktif + shift */}
-      <ShiftPanel user={user} />
+      <ShiftPanel user={user} compact={compact} />
 
       {/* Bantuan & keluar */}
-      <div className="flex flex-col gap-0.5 border-t border-border px-2.5 py-3">
-        <Link
-          href="/help"
-          onClick={onNavigate}
-          className={cn(
-            "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
-            pathname.startsWith("/help") ? "bg-primary/10 text-primary" : "hover:bg-muted hover:text-foreground",
-          )}
-        >
-          <HelpCircle className="h-4 w-4" />
-          Bantuan
-        </Link>
-        <button
-          type="button"
-          onClick={handleLogout}
-          className="flex items-center gap-3 rounded-lg px-3 py-2 text-left text-sm font-medium transition-colors hover:bg-muted hover:text-foreground"
-        >
-          <LogOut className="h-4 w-4" />
-          Keluar
-        </button>
-      </div>
+      {compact ? (
+        <div className="flex flex-col items-center gap-0.5 border-t border-border px-2 py-3">
+          <Link
+            href="/help"
+            aria-label="Bantuan"
+            title="Bantuan"
+            className="flex h-11 w-11 items-center justify-center rounded-lg transition-colors hover:bg-muted hover:text-foreground"
+          >
+            <HelpCircle className="h-5 w-5" />
+          </Link>
+          <button
+            type="button"
+            onClick={handleLogout}
+            aria-label="Keluar"
+            title="Keluar"
+            className="flex h-11 w-11 items-center justify-center rounded-lg transition-colors hover:bg-muted hover:text-foreground"
+          >
+            <LogOut className="h-5 w-5" />
+          </button>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-0.5 border-t border-border px-2.5 py-3">
+          <Link
+            href="/help"
+            onClick={onNavigate}
+            className={cn(
+              "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+              pathname.startsWith("/help") ? "bg-primary/10 text-primary" : "hover:bg-muted hover:text-foreground",
+            )}
+          >
+            <HelpCircle className="h-4 w-4" />
+            Bantuan
+          </Link>
+          <button
+            type="button"
+            onClick={handleLogout}
+            className="flex items-center gap-3 rounded-lg px-3 py-2 text-left text-sm font-medium transition-colors hover:bg-muted hover:text-foreground"
+          >
+            <LogOut className="h-4 w-4" />
+            Keluar
+          </button>
+        </div>
+      )}
     </div>
   );
 }

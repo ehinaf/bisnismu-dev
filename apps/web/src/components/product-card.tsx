@@ -1,33 +1,34 @@
-import { Plus } from "lucide-react";
 import { formatCurrency } from "@/lib/format";
+import { categoryColor } from "@/lib/category-colors";
 import type { CatalogItem } from "@/lib/types";
 
+// Tile produk ala Square: nama & harga yang mudah dibaca, tanpa blok gambar
+// kosong. Garis kiri berwarna menandai kategori; foto tampil bila ada.
 export function ProductCard({ item, onAdd }: { item: CatalogItem; onAdd: (item: CatalogItem) => void }) {
-  const initials = item.name.trim().slice(0, 2).toUpperCase();
+  const accent = categoryColor(item.category_id);
+  const hasOptions = item.variant_count > 0 || item.modifier_group_count > 0;
+  const openPrice = item.pricing_type === "open";
 
   return (
     <button
       type="button"
       onClick={() => onAdd(item)}
-      className="group relative flex flex-col overflow-hidden rounded-xl border border-border bg-card text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:translate-y-0 active:scale-[0.98]"
+      className="relative flex min-h-[5.5rem] flex-col overflow-hidden rounded-lg border border-border bg-card text-left transition-colors hover:border-primary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:bg-muted"
     >
-      <div className="relative aspect-[4/3] w-full overflow-hidden bg-muted">
-        {item.image_url ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={item.image_url} alt={item.name} className="h-full w-full object-cover" />
-        ) : (
-          <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-secondary to-muted">
-            <span className="text-2xl font-bold text-muted-foreground/50">{initials}</span>
-          </div>
-        )}
-        <span className="absolute bottom-2 right-2 flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-md transition-all group-hover:scale-110 lg:opacity-0 lg:group-hover:opacity-100">
-          <Plus className="h-4 w-4" />
-        </span>
-      </div>
-      <div className="flex flex-1 flex-col gap-1 p-3">
+      {accent && <span aria-hidden className="absolute inset-y-0 left-0 w-1" style={{ backgroundColor: accent }} />}
+      {item.image_url && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={item.image_url} alt="" className="aspect-[4/3] w-full border-b border-border object-cover" />
+      )}
+      <span className="flex flex-1 flex-col justify-between gap-2 py-2.5 pl-3.5 pr-3">
         <span className="line-clamp-2 text-sm font-medium leading-snug">{item.name}</span>
-        <span className="mt-auto pt-1 text-sm font-bold">{formatCurrency(item.base_price)}</span>
-      </div>
+        <span className="flex items-baseline justify-between gap-2">
+          <span className={openPrice ? "text-xs font-medium text-muted-foreground" : "text-sm font-semibold"}>
+            {openPrice ? "Harga bebas" : formatCurrency(item.base_price)}
+          </span>
+          {hasOptions && <span className="text-[11px] font-medium text-muted-foreground">Pilihan</span>}
+        </span>
+      </span>
     </button>
   );
 }

@@ -4,7 +4,7 @@ import type { CatalogItem } from "@/lib/types";
 
 // Jumlah kolom mengikuti lebar area produk, bukan lebar layar — area ini
 // menyempit saat sidebar dan kolom keranjang tampil di layar besar.
-const GRID_CLASS = "grid grid-cols-[repeat(auto-fill,minmax(7.5rem,1fr))] gap-3";
+const GRID_CLASS = "grid grid-cols-[repeat(auto-fill,minmax(8rem,1fr))] gap-2.5";
 
 export function ProductGrid({
   items,
@@ -19,12 +19,9 @@ export function ProductGrid({
     return (
       <div className={GRID_CLASS}>
         {Array.from({ length: 10 }).map((_, i) => (
-          <div key={i} className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
-            <div className="aspect-[4/3] w-full animate-pulse bg-muted" />
-            <div className="flex flex-col gap-2 p-3">
-              <div className="h-3.5 w-3/4 animate-pulse rounded bg-muted" />
-              <div className="h-3.5 w-1/2 animate-pulse rounded bg-muted" />
-            </div>
+          <div key={i} className="flex min-h-[5.5rem] flex-col justify-between rounded-lg border border-border bg-card p-3">
+            <div className="h-3.5 w-3/4 animate-pulse rounded bg-muted" />
+            <div className="h-3.5 w-1/3 animate-pulse rounded bg-muted" />
           </div>
         ))}
       </div>
@@ -33,7 +30,7 @@ export function ProductGrid({
 
   if (items.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border py-16 text-center">
+      <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-border py-16 text-center">
         <PackageOpen className="h-10 w-10 text-muted-foreground/50" />
         <p className="text-sm text-muted-foreground">Tidak ada produk yang cocok.</p>
       </div>

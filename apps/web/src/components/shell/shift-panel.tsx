@@ -1,13 +1,14 @@
 "use client";
 
 import { useState } from "react";
+import { Wallet } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { AuthUser } from "@/lib/auth";
 import { useCashdrawer } from "@/lib/hooks/use-cashdrawer";
 import { CloseShiftDialog, OpenShiftDialog } from "@/components/shell/shift-dialogs";
 
 // Panel "Kasir Aktif" + status shift (sesi kas/laci) di bagian bawah sidebar.
-export function ShiftPanel({ user }: { user: AuthUser | null }) {
+export function ShiftPanel({ user, compact = false }: { user: AuthUser | null; compact?: boolean }) {
   const { session } = useCashdrawer();
   const [dialog, setDialog] = useState<"open" | "close" | null>(null);
 
@@ -17,6 +18,38 @@ export function ShiftPanel({ user }: { user: AuthUser | null }) {
   const openedTime = isOpen
     ? new Date(session.opened_at).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })
     : null;
+
+  const dialogs = (
+    <>
+      <OpenShiftDialog open={dialog === "open"} onClose={() => setDialog(null)} />
+      <CloseShiftDialog open={dialog === "close"} onClose={() => setDialog(null)} />
+    </>
+  );
+
+  // Rail kasir: satu tombol laci dengan titik status; nama kasir ada di topbar.
+  if (compact) {
+    const label = isOpen ? "Tutup Shift" : "Buka Shift";
+    return (
+      <div className="flex justify-center border-t border-border px-2 py-3">
+        <button
+          type="button"
+          onClick={() => setDialog(isOpen ? "close" : "open")}
+          aria-label={label}
+          title={isOpen ? `Shift buka sejak ${openedTime} — ${label}` : `Shift belum dibuka — ${label}`}
+          className="relative flex h-11 w-11 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        >
+          <Wallet className="h-5 w-5" />
+          <span
+            className={cn(
+              "absolute right-2 top-2 h-2.5 w-2.5 rounded-full ring-2 ring-card",
+              isOpen ? "bg-success" : "bg-muted-foreground/50",
+            )}
+          />
+        </button>
+        {dialogs}
+      </div>
+    );
+  }
 
   return (
     <div className="border-t border-border px-4 py-3">
@@ -46,8 +79,7 @@ export function ShiftPanel({ user }: { user: AuthUser | null }) {
         </button>
       )}
 
-      <OpenShiftDialog open={dialog === "open"} onClose={() => setDialog(null)} />
-      <CloseShiftDialog open={dialog === "close"} onClose={() => setDialog(null)} />
+      {dialogs}
     </div>
   );
 }
