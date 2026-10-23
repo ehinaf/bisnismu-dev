@@ -7,7 +7,7 @@ import { Delete } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { apiClient, ApiError } from "@/lib/api-client";
 import { saveAuth, type AuthUser } from "@/lib/auth";
 import { forgetDeviceBusiness, getDeviceBusiness, rememberDeviceBusiness, type DeviceBusiness } from "@/lib/device";
@@ -111,22 +111,22 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-muted/30 px-4 py-8">
+    <main className="flex min-h-screen items-center justify-center bg-background px-4 py-8">
       <div className="w-full max-w-sm">
         <div className="mb-6 flex flex-col items-center gap-3 text-center">
-          <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary text-lg font-bold text-primary-foreground shadow-sm">
+          <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary text-lg font-bold text-primary-foreground">
             B
           </span>
           <div>
             <h1 className="text-xl font-semibold tracking-tight">
-              {device ? device.name : "Selamat datang kembali"}
+              {device ? device.name : "Masuk ke BisnisMu"}
             </h1>
             <p className="text-sm text-muted-foreground">Masuk untuk mulai berjualan</p>
           </div>
         </div>
         <Card className="w-full">
-          <CardHeader>
-            {device ? (
+          {device && (
+            <CardHeader>
               <div className="grid grid-cols-2 gap-1 rounded-lg bg-muted p-1" role="tablist" aria-label="Cara masuk">
                 {(
                   [
@@ -142,18 +142,16 @@ export default function LoginPage() {
                     onClick={() => switchMode(value)}
                     className={cn(
                       "h-9 rounded-md text-sm font-medium transition-colors",
-                      mode === value ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+                      mode === value ? "bg-card text-foreground" : "text-muted-foreground hover:text-foreground",
                     )}
                   >
                     {label}
                   </button>
                 ))}
               </div>
-            ) : (
-              <CardTitle className="text-lg">Masuk ke BisnisMu</CardTitle>
-            )}
-          </CardHeader>
-          <CardContent>
+            </CardHeader>
+          )}
+          <CardContent className={device ? undefined : "pt-6"}>
             {mode === "pin" && device ? (
               <div className="flex flex-col gap-4">
                 <div className="flex justify-center gap-3" aria-label={`${pin.length} digit PIN diisi`} role="status">
