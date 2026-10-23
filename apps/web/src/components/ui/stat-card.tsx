@@ -1,26 +1,22 @@
-import { type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
+// Kartu angka ringkas (pola Stripe): label kecil, angka besar, tanpa ikon hiasan.
+// Warna hanya untuk makna (laba positif/negatif).
 export function StatCard({
   label,
   value,
-  icon: Icon,
   accent,
 }: {
   label: string;
   value: string;
-  icon?: LucideIcon;
   accent?: "positive" | "negative";
 }) {
   return (
-    <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-xs font-medium text-muted-foreground">{label}</span>
-        {Icon && <Icon className="h-4 w-4 text-muted-foreground/60" />}
-      </div>
+    <div className="rounded-lg border border-border bg-card p-4">
+      <span className="text-xs font-medium text-muted-foreground">{label}</span>
       <p
         className={cn(
-          "mt-1.5 text-xl font-semibold tracking-tight tabular-nums",
+          "mt-1 text-2xl font-semibold tracking-tight",
           accent === "positive" && "text-success",
           accent === "negative" && "text-destructive",
         )}

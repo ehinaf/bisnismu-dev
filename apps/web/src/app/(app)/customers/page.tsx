@@ -5,12 +5,14 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { EmptyState } from "@/components/ui/empty-state";
+import { RowMenu } from "@/components/ui/row-menu";
 import { Input } from "@/components/ui/input";
 import { MoneyInput } from "@/components/ui/money-input";
 import { Label } from "@/components/ui/label";
 import { PageHeader } from "@/components/ui/page-header";
 import { Page } from "@/components/ui/page";
-import { Plus, Users } from "lucide-react";
+import { Plus, Search, Users } from "lucide-react";
 import { apiClient, ApiError } from "@/lib/api-client";
 import { getUser } from "@/lib/auth";
 import { formatCurrency } from "@/lib/format";
@@ -58,6 +60,20 @@ export default function CustomersPage() {
     }
     setReady(true);
   }, [router]);
+
+  const [query, setQuery] = useState("");
+  const q = query.trim().toLowerCase();
+  const visibleCustomers = customers.filter(
+    (c) => !q || [c.name, c.phone].some((v) => v?.toLowerCase().includes(q)),
+  );
+
+  function rowActions(c: Customer) {
+    return [
+      { label: "Detail & kasbon", onSelect: () => router.push(`/customers/${c.id}`) },
+      { label: "Ubah", onSelect: () => openEditForm(c) },
+      { label: "Hapus", onSelect: () => setPendingDelete(c), destructive: true },
+    ];
+  }
 
   async function loadAll() {
     setLoading(true);
@@ -198,66 +214,99 @@ export default function CustomersPage() {
         </Card>
       )}
 
+      {!loading && customers.length > 0 && (
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            aria-label="Cari pelanggan"
+            placeholder="Cari nama atau telepon..."
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+      )}
+
       <Card>
         <CardContent className="p-0">
           {loading ? (
             <p className="p-4 text-sm text-muted-foreground">Memuat pelanggan...</p>
           ) : customers.length === 0 ? (
-            <div className="flex flex-col items-center gap-3 py-12 text-center">
-              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted">
-                <Users className="h-6 w-6 text-muted-foreground/60" />
-              </div>
-              <p className="text-sm text-muted-foreground">Belum ada pelanggan. Tambahkan pelanggan pertama Anda.</p>
-              <Button size="sm" onClick={openCreateForm}>
-                <Plus className="h-4 w-4" /> Pelanggan Baru
-              </Button>
-            </div>
+            <EmptyState
+              icon={Users}
+              title="Belum ada pelanggan"
+              description="Simpan pelanggan langganan untuk kasbon dan riwayat belanja."
+              action={
+                <Button size="sm" onClick={openCreateForm}>
+                  <Plus className="h-4 w-4" /> Pelanggan Baru
+                </Button>
+              }
+            />
+          ) : visibleCustomers.length === 0 ? (
+            <p className="p-6 text-center text-sm text-muted-foreground">Tidak ada pelanggan yang cocok.</p>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+            <>
+              {/* Desktop: tabel; klik baris = detail, aksi lain di menu ⋯ */}
+              <table className="hidden w-full text-sm md:table">
                 <thead>
-                  <tr className="border-b border-border bg-muted/50 text-left text-xs uppercase tracking-wide text-muted-foreground">
-                    <th className="px-4 py-3 font-medium">Nama</th>
-                    <th className="px-4 py-3 font-medium">Telepon</th>
-                    <th className="px-4 py-3 text-right font-medium">Total Belanja</th>
-                    <th className="px-4 py-3 text-right font-medium">Poin</th>
-                    <th className="px-4 py-3 text-right font-medium">Limit Kasbon</th>
-                    <th className="px-4 py-3 text-right font-medium">Aksi</th>
+                  <tr className="border-b border-border text-left text-xs text-muted-foreground">
+                    <th className="px-4 py-2.5 font-medium">Nama</th>
+                    <th className="px-4 py-2.5 font-medium">Telepon</th>
+                    <th className="px-4 py-2.5 text-right font-medium">Total belanja</th>
+                    <th className="px-4 py-2.5 text-right font-medium">Poin</th>
+                    <th className="px-4 py-2.5 text-right font-medium">Limit kasbon</th>
+                    <th className="w-12 px-2 py-2.5">
+                      <span className="sr-only">Aksi</span>
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
-                  {customers.map((c) => (
-                    <tr key={c.id} className="border-b border-border transition-colors last:border-0 hover:bg-muted/40">
-                      <td className="px-4 py-3">
+                  {visibleCustomers.map((c) => (
+                    <tr
+                      key={c.id}
+                      onClick={() => router.push(`/customers/${c.id}`)}
+                      className="cursor-pointer border-b border-border transition-colors last:border-0 hover:bg-muted/50"
+                    >
+                      <td className="px-4 py-2.5">
                         <button
-                          className="font-medium text-primary hover:underline"
+                          type="button"
+                          className="text-left font-medium hover:underline"
                           onClick={() => router.push(`/customers/${c.id}`)}
                         >
                           {c.name ?? "(tanpa nama)"}
                         </button>
                       </td>
-                      <td className="px-4 py-3 text-muted-foreground">{c.phone ?? "-"}</td>
-                      <td className="px-4 py-3 text-right tabular-nums">{formatCurrency(c.total_spent)}</td>
-                      <td className="px-4 py-3 text-right tabular-nums">{c.loyalty_points}</td>
-                      <td className="px-4 py-3 text-right tabular-nums">{formatCurrency(c.credit_limit)}</td>
-                      <td className="px-4 py-3">
-                        <div className="flex justify-end gap-2">
-                          <Button size="sm" variant="outline" onClick={() => router.push(`/customers/${c.id}`)}>
-                            Detail
-                          </Button>
-                          <Button size="sm" variant="outline" onClick={() => openEditForm(c)}>
-                            Ubah
-                          </Button>
-                          <Button size="sm" variant="ghost" onClick={() => setPendingDelete(c)}>
-                            Hapus
-                          </Button>
-                        </div>
+                      <td className="px-4 py-2.5 text-muted-foreground">{c.phone ?? "-"}</td>
+                      <td className="px-4 py-2.5 text-right">{formatCurrency(c.total_spent)}</td>
+                      <td className="px-4 py-2.5 text-right">{c.loyalty_points}</td>
+                      <td className="px-4 py-2.5 text-right">{formatCurrency(c.credit_limit)}</td>
+                      <td className="px-2 py-1.5">
+                        <RowMenu label={`Aksi ${c.name ?? c.phone ?? "pelanggan"}`} items={rowActions(c)} />
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-            </div>
+
+              {/* Ponsel: daftar ringkas */}
+              <ul className="divide-y divide-border md:hidden">
+                {visibleCustomers.map((c) => (
+                  <li key={c.id} className="flex items-center gap-2 py-1 pl-4 pr-2">
+                    <button
+                      type="button"
+                      onClick={() => router.push(`/customers/${c.id}`)}
+                      className="min-w-0 flex-1 py-2 text-left"
+                    >
+                      <p className="truncate text-sm font-medium">{c.name ?? "(tanpa nama)"}</p>
+                      <p className="truncate text-xs text-muted-foreground">
+                        {c.phone ?? "Tanpa telepon"} · belanja {formatCurrency(c.total_spent)}
+                      </p>
+                    </button>
+                    <RowMenu label={`Aksi ${c.name ?? c.phone ?? "pelanggan"}`} items={rowActions(c)} />
+                  </li>
+                ))}
+              </ul>
+            </>
           )}
         </CardContent>
       </Card>

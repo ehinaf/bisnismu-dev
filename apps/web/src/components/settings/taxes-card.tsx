@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Pencil, Percent, Plus } from "lucide-react";
+import { Pencil, Plus } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -98,12 +98,10 @@ export function TaxesCard() {
   }
 
   return (
-    <Card>
+    <Card id="pajak" className="scroll-mt-20">
       <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
         <div>
-          <CardTitle className="flex items-center gap-2">
-            <Percent className="h-4 w-4" /> Pajak & Service Charge
-          </CardTitle>
+          <CardTitle>Pajak & Service Charge</CardTitle>
           <p className="mt-1.5 text-sm text-muted-foreground">
             Semua yang aktif dikenakan atas subtotal setiap transaksi (di luar harga produk).
           </p>

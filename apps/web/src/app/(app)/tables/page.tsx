@@ -242,12 +242,12 @@ export default function TablesPage() {
                       disabled={disabled}
                       onClick={() => !disabled && router.push(`/tables/${table.id}`)}
                       className={cn(
-                        "group relative flex flex-col gap-2 overflow-hidden rounded-xl border border-border bg-card p-4 text-left shadow-sm transition-all",
+                        "group relative flex flex-col gap-2 overflow-hidden rounded-lg border border-border bg-card p-4 text-left transition-colors",
                         "before:absolute before:inset-y-0 before:left-0 before:w-1",
                         STATUS_ACCENT[table.status] ?? "before:bg-border",
                         disabled
                           ? "cursor-not-allowed opacity-60"
-                          : "hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:translate-y-0",
+                          : "hover:border-primary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:bg-muted",
                       )}
                     >
                       <div className="flex items-start justify-between gap-2">

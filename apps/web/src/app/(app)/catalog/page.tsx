@@ -10,9 +10,10 @@ import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { PageHeader } from "@/components/ui/page-header";
 import { Page } from "@/components/ui/page";
-import { Badge } from "@/components/ui/badge";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { PackageOpen, Plus } from "lucide-react";
+import { EmptyState } from "@/components/ui/empty-state";
+import { RowMenu } from "@/components/ui/row-menu";
+import { PackageOpen, Plus, Search } from "lucide-react";
 import { apiClient, ApiError } from "@/lib/api-client";
 import { getUser } from "@/lib/auth";
 import { formatCurrency } from "@/lib/format";
@@ -87,6 +88,8 @@ export default function CatalogPage() {
   const [pendingDeactivate, setPendingDeactivate] = useState<ItemDetail | null>(null);
   const [deactivating, setDeactivating] = useState(false);
 
+  const [query, setQuery] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("");
   const [newCategoryName, setNewCategoryName] = useState("");
   const [newUnit, setNewUnit] = useState({ name: "", symbol: "" });
 
@@ -233,15 +236,29 @@ export default function CatalogPage() {
   }
 
   function categoryName(id: string | null) {
-    return categories.find((c) => c.id === id)?.name ?? "-";
+    return categories.find((c) => c.id === id)?.name ?? "Tanpa kategori";
   }
+
+  function rowActions(item: ItemDetail) {
+    return [
+      { label: "Ubah", onSelect: () => openEditForm(item) },
+      { label: "Nonaktifkan", onSelect: () => setPendingDeactivate(item), destructive: true },
+    ];
+  }
+
+  const q = query.trim().toLowerCase();
+  const visibleItems = items.filter(
+    (i) =>
+      (!categoryFilter || i.category_id === categoryFilter) &&
+      (!q || [i.name, i.sku, i.barcode].some((v) => v?.toLowerCase().includes(q))),
+  );
 
   if (!ready) return null;
 
   return (
     <Page width="wide">
       <PageHeader
-        title="Kelola Produk"
+        title="Produk"
         description="Katalog barang, jasa, dan stok awal"
         action={
           <Button onClick={openCreateForm}>
@@ -426,64 +443,114 @@ export default function CatalogPage() {
         </Card>
       )}
 
+      {!loading && items.length > 0 && (
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <div className="relative flex-1">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              aria-label="Cari produk"
+              placeholder="Cari nama, SKU, atau barcode..."
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              className="pl-9"
+            />
+          </div>
+          <Select
+            aria-label="Filter kategori"
+            value={categoryFilter}
+            onChange={(e) => setCategoryFilter(e.target.value)}
+            className="sm:w-48"
+          >
+            <option value="">Semua kategori</option>
+            {categories.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </Select>
+        </div>
+      )}
+
       <Card>
         <CardContent className="p-0">
           {loading ? (
             <p className="p-4 text-sm text-muted-foreground">Memuat produk...</p>
           ) : items.length === 0 ? (
-            <div className="flex flex-col items-center gap-3 py-12 text-center">
-              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted">
-                <PackageOpen className="h-6 w-6 text-muted-foreground/60" />
-              </div>
-              <p className="text-sm text-muted-foreground">Belum ada produk. Tambahkan produk pertama Anda.</p>
-              <Button size="sm" onClick={openCreateForm}>
-                <Plus className="h-4 w-4" /> Produk Baru
-              </Button>
-            </div>
+            <EmptyState
+              icon={PackageOpen}
+              title="Belum ada produk"
+              description="Tambahkan produk pertama Anda — barang, jasa, atau menu."
+              action={
+                <Button size="sm" onClick={openCreateForm}>
+                  <Plus className="h-4 w-4" /> Produk Baru
+                </Button>
+              }
+            />
+          ) : visibleItems.length === 0 ? (
+            <p className="p-6 text-center text-sm text-muted-foreground">Tidak ada produk yang cocok.</p>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+            <>
+              {/* Desktop: tabel; klik nama = ubah, aksi lain di menu ⋯ */}
+              <table className="hidden w-full text-sm md:table">
                 <thead>
-                  <tr className="border-b border-border bg-muted/50 text-left text-xs uppercase tracking-wide text-muted-foreground">
-                    <th className="px-4 py-3 font-medium">Nama</th>
-                    <th className="px-4 py-3 font-medium">Kategori</th>
-                    <th className="px-4 py-3 font-medium">Jenis</th>
-                    <th className="px-4 py-3 text-right font-medium">Harga</th>
-                    <th className="px-4 py-3 font-medium">Status</th>
-                    <th className="px-4 py-3 text-right font-medium">Aksi</th>
+                  <tr className="border-b border-border text-left text-xs text-muted-foreground">
+                    <th className="px-4 py-2.5 font-medium">Nama</th>
+                    <th className="px-4 py-2.5 font-medium">Kategori</th>
+                    <th className="px-4 py-2.5 font-medium">Jenis</th>
+                    <th className="px-4 py-2.5 text-right font-medium">Harga</th>
+                    <th className="w-12 px-2 py-2.5">
+                      <span className="sr-only">Aksi</span>
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
-                  {items.map((item) => (
-                    <tr key={item.id} className="border-b border-border transition-colors last:border-0 hover:bg-muted/40">
-                      <td className="px-4 py-3 font-medium">{item.name}</td>
-                      <td className="px-4 py-3 text-muted-foreground">{categoryName(item.category_id)}</td>
-                      <td className="px-4 py-3 text-muted-foreground">{ITEM_TYPE_LABEL[item.item_type]}</td>
-                      <td className="px-4 py-3 text-right tabular-nums">
-                        {item.pricing_type === "open" ? "Bebas" : formatCurrency(item.base_price)}
+                  {visibleItems.map((item) => (
+                    <tr
+                      key={item.id}
+                      onClick={() => openEditForm(item)}
+                      className="cursor-pointer border-b border-border transition-colors last:border-0 hover:bg-muted/50"
+                    >
+                      <td className="px-4 py-2.5">
+                        <button type="button" className="text-left font-medium hover:underline" onClick={() => openEditForm(item)}>
+                          {item.name}
+                        </button>
+                        {(item.sku || item.barcode) && (
+                          <p className="text-xs text-muted-foreground">{[item.sku, item.barcode].filter(Boolean).join(" · ")}</p>
+                        )}
                       </td>
-                      <td className="px-4 py-3">
-                        <Badge variant={item.is_active ? "success" : "muted"}>
-                          {item.is_active ? "Aktif" : "Nonaktif"}
-                        </Badge>
+                      <td className="px-4 py-2.5 text-muted-foreground">{categoryName(item.category_id)}</td>
+                      <td className="px-4 py-2.5 text-muted-foreground">{ITEM_TYPE_LABEL[item.item_type]}</td>
+                      <td className="px-4 py-2.5 text-right">
+                        {item.pricing_type === "open" ? (
+                          <span className="text-muted-foreground">Harga bebas</span>
+                        ) : (
+                          formatCurrency(item.base_price)
+                        )}
                       </td>
-                      <td className="px-4 py-3">
-                        <div className="flex justify-end gap-2">
-                          <Button size="sm" variant="outline" onClick={() => openEditForm(item)}>
-                            Ubah
-                          </Button>
-                          {item.is_active && (
-                            <Button size="sm" variant="ghost" onClick={() => setPendingDeactivate(item)}>
-                              Nonaktifkan
-                            </Button>
-                          )}
-                        </div>
+                      <td className="px-2 py-1.5">
+                        <RowMenu label={`Aksi ${item.name}`} items={rowActions(item)} />
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-            </div>
+
+              {/* Ponsel: daftar ringkas */}
+              <ul className="divide-y divide-border md:hidden">
+                {visibleItems.map((item) => (
+                  <li key={item.id} className="flex items-center gap-2 py-1 pl-4 pr-2">
+                    <button type="button" onClick={() => openEditForm(item)} className="min-w-0 flex-1 py-2 text-left">
+                      <p className="truncate text-sm font-medium">{item.name}</p>
+                      <p className="truncate text-xs text-muted-foreground">
+                        {categoryName(item.category_id)} ·{" "}
+                        {item.pricing_type === "open" ? "Harga bebas" : formatCurrency(item.base_price)}
+                      </p>
+                    </button>
+                    <RowMenu label={`Aksi ${item.name}`} items={rowActions(item)} />
+                  </li>
+                ))}
+              </ul>
+            </>
           )}
         </CardContent>
       </Card>

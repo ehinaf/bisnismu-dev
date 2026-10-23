@@ -92,7 +92,7 @@ function ReceiptPageContent({ params }: { params: Promise<{ id: string }> }) {
       {((isRefund && transaction.reference_transaction) ||
         (transaction.status === "void" && transaction.void_reason) ||
         transaction.refund_transactions.length > 0) && (
-        <div className="no-print flex flex-col gap-2 rounded-xl border border-border bg-card p-4 text-sm">
+        <div className="no-print flex flex-col gap-2 rounded-lg border border-border bg-card p-4 text-sm">
           {isRefund && transaction.reference_transaction && (
             <p className="text-muted-foreground">
               Refund untuk{" "}

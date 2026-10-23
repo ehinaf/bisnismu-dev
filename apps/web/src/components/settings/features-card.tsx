@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { ToggleRight } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { apiClient, ApiError } from "@/lib/api-client";
 import { useSettingsStore } from "@/lib/stores/settings-store";
@@ -51,11 +50,9 @@ export function FeaturesCard() {
   }
 
   return (
-    <Card>
+    <Card id="fitur" className="scroll-mt-20">
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <ToggleRight className="h-4 w-4" /> Fitur
-        </CardTitle>
+        <CardTitle>Fitur</CardTitle>
         <p className="text-sm text-muted-foreground">Nyalakan hanya yang dipakai usaha Anda supaya kasir tetap ringkas.</p>
       </CardHeader>
       <CardContent className="p-0">

@@ -23,7 +23,7 @@ export function ReceiptPaper({ receipt, className }: { receipt: PublicReceipt; c
   return (
     <article
       className={cn(
-        "rounded-xl border border-border bg-card p-5 text-sm shadow-sm print:rounded-none print:border-0 print:p-0 print:shadow-none",
+        "rounded-lg border border-border bg-card p-5 text-sm print:rounded-none print:border-0 print:p-0",
         className,
       )}
     >

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CreditCard, Pencil, Plus, Wallet } from "lucide-react";
+import { Pencil, Plus, Wallet } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -122,12 +122,10 @@ export function PaymentChannelsCard() {
   }
 
   return (
-    <Card>
+    <Card id="pembayaran" className="scroll-mt-20">
       <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
         <div>
-          <CardTitle className="flex items-center gap-2">
-            <CreditCard className="h-4 w-4" /> Metode Pembayaran
-          </CardTitle>
+          <CardTitle>Metode Pembayaran</CardTitle>
           <p className="mt-1.5 text-sm text-muted-foreground">
             Pilihan bayar di kasir. Biaya (MDR) dicatat per pembayaran dan mengurangi laba di laporan.
           </p>

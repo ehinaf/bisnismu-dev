@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Pencil, Plus, Store } from "lucide-react";
+import { Pencil, Plus } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -66,12 +66,10 @@ export function OutletsCard() {
   }
 
   return (
-    <Card>
+    <Card id="outlet" className="scroll-mt-20">
       <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
         <div>
-          <CardTitle className="flex items-center gap-2">
-            <Store className="h-4 w-4" /> Outlet
-          </CardTitle>
+          <CardTitle>Outlet</CardTitle>
           <p className="mt-1.5 text-sm text-muted-foreground">
             Tempat berjualan. Stok, laci kas, dan meja dicatat per outlet; alamat & telepon tampil di struk digital.
           </p>

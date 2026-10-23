@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { KeyRound, Pencil, Plus, Users } from "lucide-react";
+import { KeyRound, Pencil, Plus } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -197,12 +197,10 @@ export function UsersCard({ currentUserId, currentRole }: { currentUserId: strin
   const roleOptions = form?.id && editingSelf ? [form.role] : allowedRoles;
 
   return (
-    <Card>
+    <Card id="pengguna" className="scroll-mt-20">
       <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
         <div>
-          <CardTitle className="flex items-center gap-2">
-            <Users className="h-4 w-4" /> Pengguna & Izin
-          </CardTitle>
+          <CardTitle>Pengguna & Izin</CardTitle>
           <p className="mt-1.5 text-sm text-muted-foreground">
             Pemilik, admin, dan manajer selalu boleh void & refund. Berikan izin khusus untuk kasir atau staf tertentu.
           </p>

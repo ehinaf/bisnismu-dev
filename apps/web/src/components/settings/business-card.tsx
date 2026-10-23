@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Store } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -84,11 +83,9 @@ export function BusinessCard() {
   }
 
   return (
-    <Card>
+    <Card id="usaha" className="scroll-mt-20">
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Store className="h-4 w-4" /> Usaha & Struk
-        </CardTitle>
+        <CardTitle>Usaha & Struk</CardTitle>
         <p className="text-sm text-muted-foreground">Nama usaha dan teks tambahan tampil di setiap struk.</p>
       </CardHeader>
       <CardContent>

@@ -9,13 +9,22 @@ import { Label } from "@/components/ui/label";
 import { PageHeader } from "@/components/ui/page-header";
 import { Page } from "@/components/ui/page";
 import { StatCard } from "@/components/ui/stat-card";
-import { Receipt, TrendingDown, TrendingUp, Wallet } from "lucide-react";
+import { Download } from "lucide-react";
 import { apiClient, ApiError } from "@/lib/api-client";
+import { cn } from "@/lib/utils";
 import { getUser } from "@/lib/auth";
 import { daysAgoIso, todayIso } from "@/lib/dates";
 import { formatCurrency } from "@/lib/format";
 import { useActiveOutlet } from "@/lib/stores/outlet-store";
 import type { DailySalesRow, PaymentMethodRow, ProfitLossSummary, TopItemRow } from "@/lib/types";
+
+const PRESETS = [
+  { days: 0, label: "Hari ini" },
+  { days: 7, label: "7 hari" },
+  { days: 30, label: "30 hari" },
+];
+
+const presetFrom = (days: number) => (days === 0 ? todayIso() : daysAgoIso(days));
 
 export default function ReportsPage() {
   const router = useRouter();
@@ -65,7 +74,7 @@ export default function ReportsPage() {
   }, [ready, outlet, from, to]);
 
   function applyPreset(days: number) {
-    setFrom(days === 0 ? todayIso() : daysAgoIso(days));
+    setFrom(presetFrom(days));
     setTo(todayIso());
   }
 
@@ -91,34 +100,47 @@ export default function ReportsPage() {
 
   return (
     <Page width="wide">
-      <PageHeader title="Laporan" description="Ringkasan penjualan, laba, dan performa" />
-
-      <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
-        <div className="flex flex-wrap items-end gap-2">
-          <Button size="sm" variant="outline" onClick={() => applyPreset(0)}>
-            Hari Ini
-          </Button>
-          <Button size="sm" variant="outline" onClick={() => applyPreset(7)}>
-            7 Hari
-          </Button>
-          <Button size="sm" variant="outline" onClick={() => applyPreset(30)}>
-            30 Hari
-          </Button>
-          <div className="flex flex-col gap-1">
-            <Label htmlFor="from" className="text-xs">
-              Dari
-            </Label>
-            <Input id="from" type="date" value={from} max={to} onChange={(e) => setFrom(e.target.value)} className="h-9 w-36" />
-          </div>
-          <div className="flex flex-col gap-1">
-            <Label htmlFor="to" className="text-xs">
-              Sampai
-            </Label>
-            <Input id="to" type="date" value={to} min={from} max={todayIso()} onChange={(e) => setTo(e.target.value)} className="h-9 w-36" />
-          </div>
-          <Button size="sm" variant="outline" disabled={!outlet || exporting} onClick={handleExportCsv}>
+      <PageHeader
+        title="Laporan"
+        description="Ringkasan penjualan, laba, dan performa"
+        action={
+          <Button variant="outline" disabled={!outlet || exporting} onClick={handleExportCsv}>
+            <Download className="h-4 w-4" />
             {exporting ? "Mengekspor..." : "Ekspor CSV"}
           </Button>
+        }
+      />
+
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="inline-flex rounded-lg border border-border bg-card p-0.5" role="group" aria-label="Rentang cepat">
+          {PRESETS.map((preset) => {
+            const active = from === presetFrom(preset.days) && to === todayIso();
+            return (
+              <button
+                key={preset.days}
+                type="button"
+                aria-pressed={active}
+                onClick={() => applyPreset(preset.days)}
+                className={cn(
+                  "h-8 rounded-md px-3 text-sm font-medium transition-colors",
+                  active ? "bg-primary/10 text-primary" : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {preset.label}
+              </button>
+            );
+          })}
+        </div>
+        <div className="flex items-center gap-2 text-sm">
+          <Label htmlFor="from" className="sr-only">
+            Dari
+          </Label>
+          <Input id="from" type="date" value={from} max={to} onChange={(e) => setFrom(e.target.value)} className="h-9 w-40" />
+          <span className="text-muted-foreground">–</span>
+          <Label htmlFor="to" className="sr-only">
+            Sampai
+          </Label>
+          <Input id="to" type="date" value={to} min={from} max={todayIso()} onChange={(e) => setTo(e.target.value)} className="h-9 w-40" />
         </div>
       </div>
 
@@ -128,15 +150,14 @@ export default function ReportsPage() {
       {!loading && profitLoss && (
         <>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <StatCard icon={Wallet} label="Penjualan Kotor" value={formatCurrency(profitLoss.gross_sales)} />
-            <StatCard icon={TrendingDown} label="Pengeluaran" value={formatCurrency(profitLoss.total_expenses)} />
+            <StatCard label="Penjualan Kotor" value={formatCurrency(profitLoss.gross_sales)} />
+            <StatCard label="Pengeluaran" value={formatCurrency(profitLoss.total_expenses)} />
             <StatCard
-              icon={TrendingUp}
               label="Laba Bersih"
               value={formatCurrency(profitLoss.net_profit)}
               accent={Number(profitLoss.net_profit) >= 0 ? "positive" : "negative"}
             />
-            <StatCard icon={Receipt} label="Jumlah Transaksi" value={String(profitLoss.transaction_count)} />
+            <StatCard label="Jumlah Transaksi" value={String(profitLoss.transaction_count)} />
           </div>
 
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
