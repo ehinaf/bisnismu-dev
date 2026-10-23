@@ -9,10 +9,12 @@ export function MobileSidebar({
   open,
   onClose,
   openOrdersCount,
+  lowStockCount,
 }: {
   open: boolean;
   onClose: () => void;
   openOrdersCount?: number;
+  lowStockCount?: number;
 }) {
   const pathname = usePathname();
 
@@ -36,7 +38,7 @@ export function MobileSidebar({
         >
           <X className="h-5 w-5" />
         </button>
-        <SidebarContent openOrdersCount={openOrdersCount} onNavigate={onClose} />
+        <SidebarContent openOrdersCount={openOrdersCount} lowStockCount={lowStockCount} onNavigate={onClose} />
       </div>
     </div>
   );

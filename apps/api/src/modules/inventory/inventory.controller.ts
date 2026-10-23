@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Ip, Post, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Ip, Patch, Post, Query, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
 import { RolesGuard } from "../../common/guards/roles.guard";
 import { Roles } from "../../common/decorators/roles.decorator";
@@ -7,6 +7,7 @@ import type { JwtPayload } from "../../common/interfaces/jwt-payload.interface";
 import { InventoryService } from "./inventory.service";
 import { AdjustInventoryDto } from "./dto/adjust-inventory.dto";
 import { OutletQueryDto } from "./dto/outlet-query.dto";
+import { UpdateReorderLevelDto } from "./dto/update-reorder-level.dto";
 
 @UseGuards(JwtAuthGuard)
 @Controller("inventory")
@@ -33,5 +34,12 @@ export class InventoryController {
   @Post("adjust")
   adjust(@CurrentUser() user: JwtPayload, @Body() dto: AdjustInventoryDto, @Ip() ip: string) {
     return this.inventoryService.adjust(user.business_id, user.sub, dto, ip);
+  }
+
+  @UseGuards(RolesGuard)
+  @Roles("owner", "admin", "manager")
+  @Patch("reorder-level")
+  updateReorderLevel(@CurrentUser() user: JwtPayload, @Body() dto: UpdateReorderLevelDto) {
+    return this.inventoryService.updateReorderLevel(user.business_id, dto);
   }
 }

@@ -357,3 +357,45 @@ export interface PublicReceipt {
   change_due: string;
   payments: Array<{ method: string; amount: string }>;
 }
+
+// GET /inventory?outlet_id= — halaman Stok (item bervarian tampil per varian).
+export interface InventoryRow {
+  id: string;
+  item_id: string;
+  variant_id: string | null;
+  item_name: string;
+  variant_name: string | null;
+  sku: string | null;
+  unit_symbol: string | null;
+  allow_decimal: boolean;
+  /** Decimal string (NUMERIC 14,3). */
+  quantity_on_hand: string;
+  reorder_level: string;
+  updated_at: string;
+}
+
+export type StockMovementType =
+  | "purchase_in"
+  | "sale_out"
+  | "recipe_out"
+  | "adjustment"
+  | "return_in"
+  | "return_out"
+  | "transfer_in"
+  | "transfer_out"
+  | "waste"
+  | "production_in";
+
+// GET /inventory/movements?outlet_id=&item_id=
+export interface StockMovementRow {
+  id: string;
+  inventory_id: string;
+  movement_type: StockMovementType;
+  /** Positif = masuk, negatif = keluar. */
+  quantity: string;
+  reference_type: string | null;
+  notes: string | null;
+  created_at: string;
+  inventory: { item: { name: string }; variant: { name: string } | null };
+  creator: { name: string } | null;
+}

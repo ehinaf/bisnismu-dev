@@ -32,7 +32,7 @@ interface NavItem {
   href: string;
   icon: LucideIcon;
   managementOnly?: boolean;
-  badge?: "open-orders";
+  badge?: "open-orders" | "low-stock";
 }
 
 const NAV_ITEMS: NavItem[] = [
@@ -40,7 +40,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: "Riwayat", href: "/history", icon: History },
   { label: "Meja / Order", href: "/tables", icon: LayoutGrid, badge: "open-orders" },
   { label: "Produk", href: "/catalog", icon: Package, managementOnly: true },
-  { label: "Stok", href: "/stock", icon: Boxes, managementOnly: true },
+  { label: "Stok", href: "/stock", icon: Boxes, managementOnly: true, badge: "low-stock" },
   { label: "Pelanggan", href: "/customers", icon: Users, managementOnly: true },
   { label: "Kas & Laci", href: "/cashdrawer", icon: Wallet },
   { label: "Laporan", href: "/reports", icon: BarChart3, managementOnly: true },
@@ -60,19 +60,21 @@ export function isNavActive(pathname: string, href: string): boolean {
   return path === "/transactions" ? pathname === path : pathname.startsWith(path);
 }
 
-export function Sidebar({ openOrdersCount }: { openOrdersCount?: number }) {
+export function Sidebar({ openOrdersCount, lowStockCount }: { openOrdersCount?: number; lowStockCount?: number }) {
   return (
     <aside className="no-print fixed inset-y-0 left-0 z-40 hidden w-[210px] lg:block">
-      <SidebarContent openOrdersCount={openOrdersCount} />
+      <SidebarContent openOrdersCount={openOrdersCount} lowStockCount={lowStockCount} />
     </aside>
   );
 }
 
 export function SidebarContent({
   openOrdersCount,
+  lowStockCount,
   onNavigate,
 }: {
   openOrdersCount?: number;
+  lowStockCount?: number;
   onNavigate?: () => void;
 }) {
   const pathname = usePathname();
@@ -117,6 +119,14 @@ export function SidebarContent({
             >
               <Icon className="h-4 w-4 shrink-0" />
               <span className="flex-1 truncate">{item.label}</span>
+              {item.badge === "low-stock" && !!lowStockCount && (
+                <span
+                  title={`${lowStockCount} produk menipis/habis`}
+                  className="flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-amber-500/20 px-1.5 text-xs font-semibold text-amber-300"
+                >
+                  {lowStockCount}
+                </span>
+              )}
               {item.badge === "open-orders" && !!openOrdersCount && (
                 <span className="flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-zinc-800 px-1.5 text-xs font-semibold text-zinc-200">
                   {openOrdersCount}

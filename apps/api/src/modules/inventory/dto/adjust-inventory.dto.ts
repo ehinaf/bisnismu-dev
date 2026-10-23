@@ -1,5 +1,11 @@
-import { IsNumber, IsOptional, IsString, IsUUID, Min, MinLength } from "class-validator";
+import { IsNumber, IsOptional, IsString, IsUUID, Min, MinLength, ValidateIf } from "class-validator";
 
+/**
+ * Isi tepat salah satu:
+ * - `new_quantity`: hasil hitung fisik / stok awal (jumlah akhir);
+ * - `delta`: barang masuk (+) atau keluar (−). Dihitung di server di bawah kunci
+ *   baris, jadi penjualan yang terjadi bersamaan tidak tertimpa.
+ */
 export class AdjustInventoryDto {
   @IsUUID()
   outlet_id!: string;
@@ -11,9 +17,14 @@ export class AdjustInventoryDto {
   @IsUUID()
   variant_id?: string;
 
-  @IsNumber()
+  @ValidateIf((o: AdjustInventoryDto) => o.delta === undefined)
+  @IsNumber({ maxDecimalPlaces: 3 })
   @Min(0)
-  new_quantity!: number;
+  new_quantity?: number;
+
+  @ValidateIf((o: AdjustInventoryDto) => o.new_quantity === undefined)
+  @IsNumber({ maxDecimalPlaces: 3 })
+  delta?: number;
 
   @IsString()
   @MinLength(1)
