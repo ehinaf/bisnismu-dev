@@ -17,7 +17,8 @@ export function PosToolbar({
   onQueryChange: (value: string) => void;
   onSubmitQuery: () => boolean;
   onOpenCustomer: () => void;
-  onOpenTable: () => void;
+  /** Tidak diisi bila fitur meja nonaktif — tombolnya disembunyikan. */
+  onOpenTable?: () => void;
 }) {
   const customer = useCartStore((s) => s.customer);
   const table = useCartStore((s) => s.table);
@@ -47,7 +48,9 @@ export function PosToolbar({
       </div>
 
       <ToolbarButton icon={User} label="Pelanggan" active={!!customer} activeLabel={customer?.name} onClick={onOpenCustomer} />
-      <ToolbarButton icon={Users} label="Meja / Order" active={!!table} activeLabel={table?.name} onClick={onOpenTable} />
+      {onOpenTable && (
+        <ToolbarButton icon={Users} label="Meja / Order" active={!!table} activeLabel={table?.name} onClick={onOpenTable} />
+      )}
 
       <div className="relative">
         <ToolbarButton

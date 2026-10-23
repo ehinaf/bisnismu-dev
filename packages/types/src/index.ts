@@ -42,8 +42,10 @@ export type TaxKind = "tax" | "service_charge";
 export interface Tax {
   id: string;
   name: string;
+  /** Persen atas subtotal ("11" = 11%). */
   rate: string;
   tax_kind: TaxKind;
+  is_active: boolean;
 }
 
 export type RoundingMode =
@@ -54,10 +56,29 @@ export type RoundingMode =
   | "up_500"
   | "nearest_1000";
 
+// GET/PATCH /tenant/settings — feature flags & pengaturan struk.
 export interface BusinessSettings {
+  receipt_header: string | null;
+  receipt_footer: string | null;
   default_tax_id: string | null;
   rounding: RoundingMode;
+  low_stock_alert: boolean;
+  enable_tables: boolean;
+  enable_bookings: boolean;
   enable_kasbon: boolean;
+  enable_loyalty: boolean;
+  enable_commission: boolean;
+  receipt_via_whatsapp: boolean;
+}
+
+// GET/PATCH /tenant/business
+export interface Business {
+  id: string;
+  name: string;
+  business_type: string | null;
+  phone: string | null;
+  address: string | null;
+  timezone: string;
 }
 
 export type ItemType = "product" | "service" | "bundle" | "ingredient";

@@ -13,6 +13,8 @@ export const AUDIT_ACTIONS = {
   UPDATE_USER: "update_user",
   CREATE_PAYMENT_CHANNEL: "create_payment_channel",
   UPDATE_PAYMENT_CHANNEL: "update_payment_channel",
+  CREATE_TAX: "create_tax",
+  UPDATE_TAX: "update_tax",
 } as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[keyof typeof AUDIT_ACTIONS];

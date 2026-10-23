@@ -8,6 +8,7 @@ import { getUser } from "@/lib/auth";
 import { logout } from "@/lib/session";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { DrawerStatusPill } from "@/components/shell/drawer-status-pill";
+import { useBusinessSettings } from "@/lib/stores/settings-store";
 
 const PAGE_TITLES: Array<{ prefix: string; title: string; subtitle?: string }> = [
   { prefix: "/dashboard", title: "Transaksi Penjualan", subtitle: "Kasir" },
@@ -37,7 +38,10 @@ const ROLE_LABELS: Record<string, string> = {
 
 export function Topbar({ onOpenMenu }: { onOpenMenu: () => void }) {
   const pathname = usePathname();
-  const page = PAGE_TITLES.find((p) => pathname.startsWith(p.prefix));
+  const settings = useBusinessSettings();
+  const found = PAGE_TITLES.find((p) => pathname.startsWith(p.prefix));
+  // Tanpa fitur meja, /tables hanya berisi order yang ditahan (F8).
+  const page = found?.prefix === "/tables" && settings && !settings.enable_tables ? { ...found, title: "Hold Order" } : found;
 
   return (
     <header className="no-print sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-border bg-card/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-card/80">

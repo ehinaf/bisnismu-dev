@@ -8,12 +8,14 @@ describe("BusinessService", () => {
   let prisma: {
     business: { findFirst: jest.Mock; update: jest.Mock };
     businessSetting: { findFirst: jest.Mock; update: jest.Mock };
+    tax: { findFirst: jest.Mock };
   };
 
   beforeEach(async () => {
     prisma = {
       business: { findFirst: jest.fn(), update: jest.fn() },
       businessSetting: { findFirst: jest.fn(), update: jest.fn() },
+      tax: { findFirst: jest.fn() },
     };
 
     const moduleRef = await Test.createTestingModule({
@@ -69,8 +71,26 @@ describe("BusinessService", () => {
       expect(prisma.businessSetting.update).toHaveBeenCalledWith({
         where: { business_id: "biz-1" },
         data: { enable_kasbon: true },
+        omit: { pin_failed_attempts: true, pin_locked_until: true },
       });
       expect(result.enable_kasbon).toBe(true);
+    });
+
+    it("status kunci PIN tidak dikirim ke browser", async () => {
+      prisma.businessSetting.findFirst.mockResolvedValue({ business_id: "biz-1" });
+      await service.getSettings("biz-1");
+      expect(prisma.businessSetting.findFirst.mock.calls[0][0].omit).toEqual({
+        pin_failed_attempts: true,
+        pin_locked_until: true,
+      });
+    });
+
+    it("default_tax_id milik bisnis lain ditolak", async () => {
+      prisma.businessSetting.findFirst.mockResolvedValue({ business_id: "biz-1" });
+      prisma.tax.findFirst.mockResolvedValue(null);
+      await expect(service.updateSettings("biz-1", { default_tax_id: "tax-lain" })).rejects.toThrow(NotFoundException);
+      expect(prisma.tax.findFirst).toHaveBeenCalledWith({ where: { id: "tax-lain", business_id: "biz-1" } });
+      expect(prisma.businessSetting.update).not.toHaveBeenCalled();
     });
   });
 });

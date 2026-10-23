@@ -24,6 +24,7 @@ import { getUser } from "@/lib/auth";
 import { logout } from "@/lib/session";
 import { useActiveOutlet, useOutletStore } from "@/lib/stores/outlet-store";
 import { ShiftPanel } from "@/components/shell/shift-panel";
+import { useBusinessSettings } from "@/lib/stores/settings-store";
 
 const MANAGEMENT_ROLES = ["owner", "admin", "manager"];
 
@@ -32,13 +33,21 @@ interface NavItem {
   href: string;
   icon: LucideIcon;
   managementOnly?: boolean;
+  /** Nama menu bila fitur meja nonaktif (halaman tetap dipakai untuk order yang ditahan). */
+  labelWithoutTables?: string;
   badge?: "open-orders" | "low-stock";
 }
 
 const NAV_ITEMS: NavItem[] = [
   { label: "Kasir", href: "/transactions", icon: Calculator },
   { label: "Riwayat", href: "/history", icon: History },
-  { label: "Meja / Order", href: "/tables", icon: LayoutGrid, badge: "open-orders" },
+  {
+    label: "Meja / Order",
+    labelWithoutTables: "Hold Order",
+    href: "/tables",
+    icon: LayoutGrid,
+    badge: "open-orders",
+  },
   { label: "Produk", href: "/catalog", icon: Package, managementOnly: true },
   { label: "Stok", href: "/stock", icon: Boxes, managementOnly: true, badge: "low-stock" },
   { label: "Pelanggan", href: "/customers", icon: Users, managementOnly: true },
@@ -80,6 +89,7 @@ export function SidebarContent({
   const pathname = usePathname();
   const router = useRouter();
   const user = getUser();
+  const settings = useBusinessSettings();
   const canManage = !!user && MANAGEMENT_ROLES.includes(user.role);
 
   async function handleLogout() {
@@ -87,7 +97,9 @@ export function SidebarContent({
     router.replace("/login");
   }
 
-  const items = NAV_ITEMS.filter((item) => !item.managementOnly || canManage);
+  const items = NAV_ITEMS.filter((item) => !item.managementOnly || canManage).map((item) =>
+    item.labelWithoutTables && settings && !settings.enable_tables ? { ...item, label: item.labelWithoutTables } : item,
+  );
 
   return (
     <div className="flex h-full flex-col overflow-y-auto bg-zinc-950 text-zinc-400">
@@ -119,7 +131,7 @@ export function SidebarContent({
             >
               <Icon className="h-4 w-4 shrink-0" />
               <span className="flex-1 truncate">{item.label}</span>
-              {item.badge === "low-stock" && !!lowStockCount && (
+              {item.badge === "low-stock" && settings?.low_stock_alert && !!lowStockCount && (
                 <span
                   title={`${lowStockCount} produk menipis/habis`}
                   className="flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-amber-500/20 px-1.5 text-xs font-semibold text-amber-300"

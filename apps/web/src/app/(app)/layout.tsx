@@ -7,6 +7,7 @@ import { apiClient } from "@/lib/api-client";
 import { useOutletStore } from "@/lib/stores/outlet-store";
 import { useOpenOrdersCount } from "@/lib/hooks/use-open-orders-count";
 import { useLowStockCount } from "@/lib/hooks/use-low-stock-count";
+import { useSettingsStore } from "@/lib/stores/settings-store";
 import { Sidebar } from "@/components/shell/sidebar";
 import { Topbar } from "@/components/shell/topbar";
 import { MobileSidebar } from "@/components/shell/mobile-sidebar";
@@ -17,6 +18,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const setOutlets = useOutletStore((s) => s.setOutlets);
+  const loadSettings = useSettingsStore((s) => s.load);
   const { count: openOrdersCount } = useOpenOrdersCount();
   const { count: lowStockCount } = useLowStockCount();
 
@@ -26,6 +28,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       return;
     }
     setReady(true);
+    void loadSettings();
     apiClient
       .get<Outlet[]>("/tenant/outlets")
       .then(setOutlets)
@@ -33,7 +36,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         // Gagal memuat outlet tidak boleh memblokir seluruh app; halaman yang
         // membutuhkannya menampilkan error masing-masing.
       });
-  }, [router, setOutlets]);
+  }, [router, setOutlets, loadSettings]);
 
   if (!ready) return null;
 

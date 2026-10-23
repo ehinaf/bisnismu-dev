@@ -35,6 +35,8 @@ interface BillResponse {
 export default function TableBillPage({ params }: { params: Promise<{ tableId: string }> }) {
   const { tableId } = use(params);
   const router = useRouter();
+  // "/tables/order-<id>" = order yang ditahan tanpa meja (F8 di kasir).
+  const walkInBillId = tableId.startsWith("order-") ? tableId.slice("order-".length) : null;
 
   const outlet = useActiveOutlet();
   const outletsLoaded = useOutletStore((s) => s.loaded);
@@ -84,8 +86,10 @@ export default function TableBillPage({ params }: { params: Promise<{ tableId: s
         apiClient.get<CatalogItem[]>("/catalog/items"),
         apiClient.get<PaymentChannel[]>("/tenant/payment-channels"),
       ]);
-      setTable(tables.find((t) => t.id === tableId) ?? null);
-      setBill(bills.find((b) => b.dining_table_id === tableId) ?? null);
+      setTable(walkInBillId ? null : (tables.find((t) => t.id === tableId) ?? null));
+      setBill(
+        bills.find((b) => (walkInBillId ? b.id === walkInBillId : b.dining_table_id === tableId)) ?? null,
+      );
       setCatalogItems(items);
       setChannels(paymentChannels);
       setChannelId((prev) => prev || paymentChannels[0]?.id || "");
@@ -172,16 +176,19 @@ export default function TableBillPage({ params }: { params: Promise<{ tableId: s
     !submitting && !!channelId && !quoteLoading && !payBlocker && paidNumber > 0 && payCheck.remaining === 0;
 
   if (loading) return <p className="p-4 text-sm text-muted-foreground">Memuat...</p>;
-  if (!table) return <p className="p-4 text-sm text-destructive">Meja tidak ditemukan.</p>;
+  if (walkInBillId && !bill) {
+    return <p className="p-4 text-sm text-muted-foreground">Order sudah dibayar/dibatalkan atau tidak ditemukan.</p>;
+  }
+  if (!walkInBillId && !table) return <p className="p-4 text-sm text-destructive">Meja tidak ditemukan.</p>;
 
   return (
     <div className="mx-auto flex max-w-5xl flex-col gap-5 p-4 sm:p-6">
       <PageHeader
         icon={LayoutGrid}
-        title={table.name}
-        description={table.area ?? undefined}
+        title={table?.name ?? `Order ${bill?.transaction_number ?? ""}`}
+        description={table ? (table.area ?? undefined) : "Order tanpa meja"}
         backHref="/tables"
-        backLabel="Kembali ke Meja"
+        backLabel={table ? "Kembali ke Meja" : "Kembali ke Order"}
       />
 
       {error && <p className="rounded-lg bg-destructive/10 px-4 py-3 text-sm text-destructive">{error}</p>}
@@ -302,8 +309,12 @@ export default function TableBillPage({ params }: { params: Promise<{ tableId: s
                   <VoidDialog
                     open={cancelOpen}
                     transactionId={bill.id}
-                    title="Batalkan bill meja ini?"
-                    description="Semua pesanan di bill ini dibatalkan, stoknya dikembalikan, dan meja kembali tersedia."
+                    title={table ? "Batalkan bill meja ini?" : "Batalkan order ini?"}
+                    description={
+                      table
+                        ? "Semua pesanan di bill ini dibatalkan, stoknya dikembalikan, dan meja kembali tersedia."
+                        : "Semua pesanan di order ini dibatalkan dan stoknya dikembalikan."
+                    }
                     confirmLabel="Batalkan Bill"
                     onClose={() => setCancelOpen(false)}
                     onVoided={() => {

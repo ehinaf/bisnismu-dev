@@ -172,7 +172,7 @@ export default function TransactionsPage() {
       const label = table ? `Order ${table.name}` : "Order";
       clearAll();
       await refreshOpenOrders();
-      toast.success(`${label} ditahan — lanjutkan dari menu Meja / Order.`);
+      toast.success(`${label} ditahan — lanjutkan dari menu ${settings?.enable_tables ? "Meja / Order" : "Hold Order"}.`);
     } catch (err) {
       // Toast, bukan error di panel bayar: di ponsel panel itu tertutup saat F8/Hold ditekan.
       toast.error(err instanceof ApiError ? err.message : "Gagal menahan order.");
@@ -262,7 +262,7 @@ export default function TransactionsPage() {
         onQueryChange={setQuery}
         onSubmitQuery={handleSearchSubmit}
         onOpenCustomer={() => setCustomerModalOpen(true)}
-        onOpenTable={() => setTableModalOpen(true)}
+        onOpenTable={settings?.enable_tables ? () => setTableModalOpen(true) : undefined}
       />
 
       <CategoryChips categories={categories} activeCategoryId={activeCategoryId} onSelect={setActiveCategoryId} />
