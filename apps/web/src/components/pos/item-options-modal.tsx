@@ -184,7 +184,7 @@ export function ItemOptionsModal({
               maxLength={100}
               onChange={(e) => setNotes(e.target.value)}
               placeholder="Mis. tanpa bawang"
-              className="h-10 rounded-lg border border-input bg-background px-3 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
+              className="h-10 rounded-lg border border-input bg-card px-3 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
             />
           </div>
 

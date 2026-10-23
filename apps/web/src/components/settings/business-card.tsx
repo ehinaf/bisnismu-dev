@@ -21,7 +21,7 @@ const ROUNDING_OPTIONS: Array<{ value: RoundingMode; label: string }> = [
 ];
 
 const TEXTAREA_CLASS =
-  "min-h-[4.5rem] w-full rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+  "min-h-[4.5rem] w-full rounded-md border border-input bg-card px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
 interface FormState {
   name: string;

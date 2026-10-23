@@ -6,7 +6,9 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent } from "@/components/ui/card";
+import { AuthShell } from "@/components/auth/auth-shell";
+import { FormError } from "@/components/auth/form-error";
+import { PasswordInput } from "@/components/auth/password-input";
 import { apiClient, ApiError } from "@/lib/api-client";
 import { rememberDeviceBusiness } from "@/lib/device";
 import { saveAuth, type AuthUser } from "@/lib/auth";
@@ -48,65 +50,77 @@ export default function RegisterPage() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-background px-4 py-8">
-      <div className="w-full max-w-sm">
-        <div className="mb-6 flex flex-col items-center gap-3 text-center">
-          <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary text-lg font-bold text-primary-foreground">
-            B
-          </span>
-          <div>
-            <h1 className="text-xl font-semibold tracking-tight">Daftarkan usaha Anda</h1>
-            <p className="text-sm text-muted-foreground">Outlet & metode bayar disiapkan otomatis — siap jualan dalam beberapa menit</p>
-          </div>
+    <AuthShell
+      title="Daftarkan usaha"
+      description="Outlet dan metode bayar disiapkan otomatis — siap jualan dalam beberapa menit."
+      footer={
+        <>
+          Sudah punya akun?{" "}
+          <Link href="/login" className="font-medium text-primary hover:underline">
+            Masuk
+          </Link>
+        </>
+      }
+    >
+      <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="business_name">Nama usaha</Label>
+          <Input
+            id="business_name"
+            required
+            autoFocus
+            placeholder="mis. Warung Bu Ani"
+            value={form.business_name}
+            onChange={update("business_name")}
+            className="h-11"
+          />
         </div>
-        <Card className="w-full">
-          <CardContent className="pt-6">
-          <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="business_name">Nama Usaha</Label>
-              <Input id="business_name" required value={form.business_name} onChange={update("business_name")} />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="owner_name">Nama Pemilik</Label>
-              <Input id="owner_name" required value={form.owner_name} onChange={update("owner_name")} />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="owner_email">Email</Label>
-              <Input
-                id="owner_email"
-                type="email"
-                required
-                autoComplete="email"
-                value={form.owner_email}
-                onChange={update("owner_email")}
-              />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="owner_password">Password</Label>
-              <Input
-                id="owner_password"
-                type="password"
-                required
-                minLength={8}
-                autoComplete="new-password"
-                value={form.owner_password}
-                onChange={update("owner_password")}
-              />
-            </div>
-            {error && <p className="text-sm text-destructive">{error}</p>}
-            <Button type="submit" disabled={loading} className="w-full">
-              {loading ? "Memproses..." : "Daftar"}
-            </Button>
-            <p className="text-center text-sm text-muted-foreground">
-              Sudah punya akun?{" "}
-              <Link href="/login" className="font-medium text-primary underline underline-offset-4">
-                Masuk
-              </Link>
-            </p>
-          </form>
-          </CardContent>
-        </Card>
-      </div>
-    </main>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="owner_name">Nama pemilik</Label>
+          <Input
+            id="owner_name"
+            required
+            autoComplete="name"
+            value={form.owner_name}
+            onChange={update("owner_name")}
+            className="h-11"
+          />
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="owner_email">Email</Label>
+          <Input
+            id="owner_email"
+            type="email"
+            required
+            autoComplete="email"
+            inputMode="email"
+            placeholder="nama@usaha.com"
+            value={form.owner_email}
+            onChange={update("owner_email")}
+            className="h-11"
+          />
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="owner_password">Password</Label>
+          <PasswordInput
+            id="owner_password"
+            required
+            minLength={8}
+            autoComplete="new-password"
+            aria-describedby="owner_password_hint"
+            value={form.owner_password}
+            onChange={update("owner_password")}
+            className="h-11"
+          />
+          <p id="owner_password_hint" className="text-xs text-muted-foreground">
+            Minimal 8 karakter.
+          </p>
+        </div>
+        <FormError message={error} />
+        <Button type="submit" disabled={loading} className="mt-1 h-11 w-full">
+          {loading ? "Memproses..." : "Daftar"}
+        </Button>
+      </form>
+    </AuthShell>
   );
 }

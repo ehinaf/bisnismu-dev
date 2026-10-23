@@ -58,7 +58,7 @@ export function VoidDialog({
             onChange={(e) => setReason(e.target.value)}
             placeholder="Mis. salah input pesanan"
             aria-describedby="void-reason-hint"
-            className="w-full resize-none rounded-lg border border-input bg-background px-3 py-2 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
+            className="w-full resize-none rounded-lg border border-input bg-card px-3 py-2 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
           />
           <p id="void-reason-hint" className="text-xs text-muted-foreground">
             Minimal 3 karakter. Alasan dan nama Anda tercatat di log audit.

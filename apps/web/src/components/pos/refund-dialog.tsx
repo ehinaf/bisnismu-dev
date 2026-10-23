@@ -195,7 +195,7 @@ export function RefundDialog({
               value={reason}
               onChange={(e) => setReason(e.target.value)}
               placeholder="Mis. barang cacat, salah ukuran"
-              className="w-full resize-none rounded-lg border border-input bg-background px-3 py-2 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
+              className="w-full resize-none rounded-lg border border-input bg-card px-3 py-2 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
             />
           </div>
 

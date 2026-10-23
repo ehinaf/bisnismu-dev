@@ -92,7 +92,7 @@ export function PosCart() {
             onChange={(e) => setOrderNotes(e.target.value)}
             placeholder="Catatan order (opsional) — mis. tanpa es"
             aria-label="Catatan order"
-            className="w-full resize-none rounded-lg border border-input bg-background px-3 py-2 text-xs outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
+            className="w-full resize-none rounded-lg border border-input bg-card px-3 py-2 text-xs outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
           />
         </div>
       )}

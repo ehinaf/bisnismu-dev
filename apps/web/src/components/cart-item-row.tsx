@@ -22,7 +22,7 @@ export function CartItemRow({
         {item.options_label && <p className="truncate text-xs text-primary">{item.options_label}</p>}
         <p className="mt-0.5 text-xs text-muted-foreground">{formatCurrency(item.unit_price)} / item</p>
 
-        <div className="mt-2 inline-flex items-center rounded-lg border border-border bg-background">
+        <div className="mt-2 inline-flex items-center rounded-lg border border-border bg-card">
           <button
             type="button"
             onClick={onDecrease}
